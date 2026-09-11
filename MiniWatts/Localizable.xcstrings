@@ -1585,6 +1585,56 @@
         }
       }
     },
+    "Picture in Picture" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画中画"
+          }
+        }
+      }
+    },
+    "PiP HUD Overlay" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画中画悬浮窗"
+          }
+        }
+      }
+    },
+    "Show live current, voltage, power, and temperatures (CPU, Battery, Charger IC) in a floating Picture-in-Picture window." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在画中画悬浮窗中实时显示电流、电压、功耗以及 CPU、电池、充电 IC 的温度。"
+          }
+        }
+      }
+    },
+    "Start" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启"
+          }
+        }
+      }
+    },
+    "Stop" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
+          }
+        }
+      }
+    },
     "SoC dies" : {
       "localizations" : {
         "zh-Hans" : {

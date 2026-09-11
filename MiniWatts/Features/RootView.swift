@@ -18,6 +18,9 @@ struct RootView: View {
             SessionsView()
                 .tabItem { Label("History", systemImage: "chart.xyaxis.line") }
         }
+        .background {
+            PiPAnchorView()
+        }
         .tint(.mwAccent)
         .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {

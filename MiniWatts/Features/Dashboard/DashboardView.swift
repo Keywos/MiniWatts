@@ -27,8 +27,17 @@ struct DashboardView: View {
     }
 
     private var toolbarButtons: some View {
-        Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+        HStack(spacing: 12) {
+            Button {
+                PiPManager.shared.togglePiP()
+            } label: {
+                Image(systemName: "pip.enter")
+            }
             .tint(.mwAccent)
+
+            Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+                .tint(.mwAccent)
+        }
     }
 
     // MARK: Hero

@@ -11,6 +11,7 @@ struct SettingsView: View {
                 Backdrop(glow: .mwAccent, glowIntensity: 0.6)
                 ScrollView {
                     VStack(spacing: 14) {
+                        pipPanel
                         recordingPanel(keepAwake: $monitor.keepScreenAwakeWhileCharging)
                         capacityPanel(capacity: $monitor.configuredBatteryWattHours)
                         devicePanel
@@ -34,6 +35,29 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }.tint(.mwAccent)
+                }
+            }
+        }
+    }
+
+    private var pipPanel: some View {
+        Panel("Picture in Picture", systemImage: "pip") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("PiP HUD Overlay")
+                            .font(.system(size: 14, weight: .medium))
+                        Text("Show live current, voltage, power, and temperatures (CPU, Battery, Charger IC) in a floating Picture-in-Picture window.")
+                            .font(.caption)
+                            .foregroundStyle(Color.mwMuted)
+                    }
+                    Spacer()
+                    Button(PiPManager.shared.isActive ? "Stop" : "Start") {
+                        PiPManager.shared.togglePiP()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.mwAccent)
+                    .controlSize(.small)
                 }
             }
         }
