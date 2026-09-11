@@ -43,7 +43,10 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     func setup(with monitor: PowerMonitor, in containerView: UIView) {
         self.monitor = monitor
 
-        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            print("[PiPManager] PiP is not supported on this device")
+            return
+        }
 
         if pipController != nil {
             return
@@ -51,18 +54,27 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
         configureAudioSession()
 
-        let layer = AVSampleBufferDisplayLayer()
-        layer.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-        layer.videoGravity = .resizeAspect
-        layer.opacity = 0.01 // 极淡但不可为0或隐藏，保证图层处于激活状态
+        let layer: AVSampleBufferDisplayLayer
+        if let customView = containerView as? SampleBufferContainerView {
+            layer = customView.sampleBufferLayer
+            layer.videoGravity = .resizeAspect
+            self.pipSourceView = customView
+        } else {
+            layer = AVSampleBufferDisplayLayer()
+            layer.frame = CGRect(x: 0, y: 0, width: 64, height: 36)
+            layer.videoGravity = .resizeAspect
+            layer.opacity = 0.01
 
-        let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
-        sourceView.backgroundColor = .clear
-        sourceView.layer.addSublayer(layer)
-        containerView.addSubview(sourceView)
+            let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
+            sourceView.backgroundColor = .black
+            sourceView.alpha = 0.01
+            sourceView.layer.addSublayer(layer)
+            containerView.addSubview(sourceView)
+
+            self.pipSourceView = sourceView
+        }
 
         self.displayLayer = layer
-        self.pipSourceView = sourceView
 
         let contentSource = AVPictureInPictureController.ContentSource(
             sampleBufferDisplayLayer: layer,
@@ -73,6 +85,9 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         controller.delegate = self
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         self.pipController = controller
+
+        // 预热并喂一帧，使 isPictureInPicturePossible 尽快就绪
+        renderCurrentSnapshot()
     }
 
     func togglePiP() {
@@ -84,9 +99,35 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     }
 
     func startPiP() {
-        guard let controller = pipController, !controller.isPictureInPictureActive else { return }
+        guard let controller = pipController else {
+            print("[PiPManager] pipController is nil")
+            return
+        }
+        guard !controller.isPictureInPictureActive else { return }
+
         configureAudioSession()
-        controller.startPictureInPicture()
+        startFrameTimer()
+
+        // 检查系统当前是否允许开启画中画
+        if controller.isPictureInPicturePossible {
+            controller.startPictureInPicture()
+        } else {
+            // 如果图层尚未就绪，重试启动（最多等待 1.5 秒）
+            print("[PiPManager] isPictureInPicturePossible is false, waiting...")
+            var retries = 0
+            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] t in
+                guard let self else { t.invalidate(); return }
+                retries += 1
+                if controller.isPictureInPicturePossible {
+                    t.invalidate()
+                    controller.startPictureInPicture()
+                    print("[PiPManager] Started PiP after retry \(retries)")
+                } else if retries >= 15 {
+                    t.invalidate()
+                    print("[PiPManager] Failed to start PiP: isPictureInPicturePossible remained false")
+                }
+            }
+        }
     }
 
     func stopPiP() {

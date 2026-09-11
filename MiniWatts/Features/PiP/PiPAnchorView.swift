@@ -6,10 +6,11 @@ struct PiPAnchorView: UIViewRepresentable {
     @Environment(PowerMonitor.self) private var monitor
 
     func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
-        view.backgroundColor = .clear
+        let view = SampleBufferContainerView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
+        view.backgroundColor = .black
+        view.alpha = 0.01 // 不影响用户视觉，但满足系统“可见且在屏幕上”的要求
         view.isUserInteractionEnabled = false
-        // 延迟至下一运行循环，确保 view 已经加入 window 层级
+        
         DispatchQueue.main.async {
             PiPManager.shared.setup(with: monitor, in: view)
         }
@@ -17,6 +18,15 @@ struct PiPAnchorView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // 不需要每次更新重绘
+    }
+}
+
+final class SampleBufferContainerView: UIView {
+    override static var layerClass: AnyClass {
+        AVSampleBufferDisplayLayer.self
+    }
+    
+    var sampleBufferLayer: AVSampleBufferDisplayLayer {
+        layer as! AVSampleBufferDisplayLayer
     }
 }
