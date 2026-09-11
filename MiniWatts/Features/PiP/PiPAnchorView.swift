@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 
 /// 负责将底层 AVSampleBufferDisplayLayer 宿主 UIView 挂载到 SwiftUI 视图层级中，并绑定 PiPManager
 struct PiPAnchorView: UIViewRepresentable {
