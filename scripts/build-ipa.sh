@@ -26,6 +26,24 @@ EXPORT_DIR="$BUILD_DIR/export"
 # Override to sideload under a bundle id your own Apple ID can claim.
 BUNDLE_ID="${BUNDLE_ID:-}"
 
+# The version comes from git, so a release is one step: tag and push. Nothing in the
+# project file has to be edited first.
+#   MARKETING_VERSION        the highest v* tag on HEAD, without its "v"; on an untagged
+#                            commit, the nearest tag behind it. Export it to override —
+#                            CI does, from the tag that triggered the run.
+#   CURRENT_PROJECT_VERSION  the number of commits reachable from HEAD: it only grows on
+#                            master, and is the same locally and in CI as long as CI
+#                            checks out full history.
+# With no tags, or no git, both fall back to whatever the project file says.
+if [ -z "${MARKETING_VERSION:-}" ]; then
+  tag=$(git tag --points-at HEAD --list 'v*' 2>/dev/null | sort -V | tail -1 || true)
+  [ -n "$tag" ] || tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+  [ -z "$tag" ] || MARKETING_VERSION="${tag#v}"
+fi
+if [ -z "${CURRENT_PROJECT_VERSION:-}" ]; then
+  CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD 2>/dev/null || true)
+fi
+
 MODE="${1:-unsigned}"
 case "$MODE" in
   unsigned) ;;
@@ -43,6 +61,9 @@ mkdir -p "$BUILD_DIR"
 
 overrides=()
 [ -n "$BUNDLE_ID" ] && overrides+=("PRODUCT_BUNDLE_IDENTIFIER=$BUNDLE_ID")
+[ -z "${MARKETING_VERSION:-}" ] || overrides+=("MARKETING_VERSION=$MARKETING_VERSION")
+[ -z "${CURRENT_PROJECT_VERSION:-}" ] || overrides+=("CURRENT_PROJECT_VERSION=$CURRENT_PROJECT_VERSION")
+echo "==> Version ${MARKETING_VERSION:-(project file)} build ${CURRENT_PROJECT_VERSION:-(project file)}"
 
 # Swift bakes absolute source and intermediate paths into the binary through
 # debug info and #file metadata, so an unsigned build still shipped the builder's

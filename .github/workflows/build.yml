@@ -7,6 +7,10 @@ name: Build
 # The cost of dropping master builds is that a broken commit is not noticed until you
 # tag. Run this workflow by hand (Actions -> Build -> Run workflow) before tagging, or
 # just build locally with ./scripts/build-ipa.sh, which runs the same steps.
+#
+# Cutting a release is `git tag v1.2.0 && git push origin v1.2.0`, and nothing else.
+# The version comes from the tag and the build number from the commit count; the
+# project file's MARKETING_VERSION is never edited.
 on:
   push:
     tags: ["v*"]
@@ -25,7 +29,11 @@ jobs:
       contents: write
 
     steps:
+      # Full history and tags: the build number is the commit count, and a shallow
+      # clone would make every build number 1.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Select newest Xcode
         run: |
@@ -61,25 +69,13 @@ jobs:
             exit 1
           fi
 
-      # The tag names the release; MARKETING_VERSION is what the installed app reports
-      # in Settings and what verify-clean.sh prints. Nothing keeps them in step on its
-      # own, so a v1.1 release shipping a binary that still says 1.0 is a mistake you
-      # only find after publishing. The tag must be "v" + MARKETING_VERSION exactly.
-      - name: Check the tag matches the project version
+      # On a tag, the tag is the version: build-ipa.sh hands MARKETING_VERSION to
+      # xcodebuild, so the project file never has to be edited to cut a release. Taken
+      # from the triggering tag explicitly rather than left to the script's own git
+      # lookup, which cannot tell which of two tags on one commit this run is for.
+      - name: Take the version from the tag
         if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          count=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);/\1/p' MiniWatts.xcodeproj/project.pbxproj | sort -u | wc -l | tr -d ' ')
-          project=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);/\1/p' MiniWatts.xcodeproj/project.pbxproj | sort -u | head -1)
-          if [ "$count" != "1" ]; then
-            echo "::error::Debug and Release disagree on MARKETING_VERSION. Set both to the same value."
-            exit 1
-          fi
-          echo "tag $GITHUB_REF_NAME -> $tag, project MARKETING_VERSION $project"
-          if [ "$tag" != "$project" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $project. Either bump MARKETING_VERSION to $tag in Xcode (target -> General -> Version) and re-tag, or tag v$project instead."
-            exit 1
-          fi
+        run: echo "MARKETING_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Build unsigned ipa
         run: ./scripts/build-ipa.sh
@@ -87,6 +83,22 @@ jobs:
       # Nothing about the machine that produced the build may reach the artifact.
       - name: Verify the ipa carries no identifying data
         run: ./scripts/verify-clean.sh build/export/MiniWatts-unsigned.ipa
+
+      # The version reaches the bundle only as a build-setting override. If that ever
+      # stops working, a release named v1.2.0 would quietly ship a binary saying 1.0.
+      - name: Check the ipa reports the tag's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          work=$(mktemp -d)
+          unzip -q build/export/MiniWatts-unsigned.ipa -d "$work"
+          plist="$(ls -d "$work"/Payload/*.app)/Info.plist"
+          built=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
+          number=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")
+          echo "tag $GITHUB_REF_NAME -> ipa $built ($number)"
+          if [ "$built" != "$MARKETING_VERSION" ]; then
+            echo "::error::The ipa reports version $built but the tag is $GITHUB_REF_NAME: MARKETING_VERSION did not reach the bundle."
+            exit 1
+          fi
 
       - name: Upload ipa
         uses: actions/upload-artifact@v4

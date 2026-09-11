@@ -29,7 +29,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1已持续 %2"
+            "value" : "%1$@ 已持续 %2$@"
           }
         }
       }
@@ -101,7 +101,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1%% → %2%%"
+            "value" : "%1$lld%% → %2$lld%%"
           }
         }
       }
@@ -1150,7 +1150,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在总计 %2 中实际测量了 %1 —— 其余时间应用处于后台，该时间段直接排除未进行估算。"
+            "value" : "在总计 %2$@ 中实际测量了 %1$@ —— 其余时间应用处于后台，该时间段直接排除未进行估算。"
           }
         }
       }
