@@ -271,14 +271,14 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             let row1Y: CGFloat = 34
             for (idx, item) in row1.enumerated() {
                 let x = colStartX + CGFloat(idx) * (colWidth + colSpacing)
-                drawItem(item, atX: x, topY: row1Y)
+                drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row1Y)
             }
 
             // 绘制第 2 行
             let row2Y: CGFloat = 104
             for (idx, item) in row2.enumerated() {
                 let x = colStartX + CGFloat(idx) * (colWidth + colSpacing)
-                drawItem(item, atX: x, topY: row2Y)
+                drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row2Y)
             }
         }
     }
