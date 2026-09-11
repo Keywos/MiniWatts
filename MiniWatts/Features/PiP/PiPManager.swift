@@ -7,6 +7,7 @@ import SwiftUI
 final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     static let shared = PiPManager()
 
+    var isActive: Bool { isPiPActive }
     private(set) var isPiPActive: Bool = false {
         didSet {
             onStateChanged?(isPiPActive)
@@ -168,44 +169,59 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             roundedPath.stroke()
 
             // 提取数据
+            // 电流：优先使用电池轨/输入电流，或 simulator 寄存器电流
+            let currentVal = snapshot.batteryRailCurrent ?? snapshot.usbInputCurrent ?? snapshot.wirelessInputCurrent ?? snapshot.registryCurrent
             let currentText: String
-            if let a = snapshot.current {
-                currentText = Formatting.amps(a)
+            if let a = currentVal {
+                currentText = Formatting.amps(abs(a))
             } else {
                 currentText = "—"
             }
 
+            // 电压：优先使用电池轨/输入电压，或 simulator 寄存器电压
+            let voltageVal = snapshot.batteryRailVoltage ?? snapshot.usbInputVoltage ?? snapshot.wirelessInputVoltage ?? snapshot.registryVoltage
             let voltageText: String
-            if let v = snapshot.voltage {
+            if let v = voltageVal {
                 voltageText = Formatting.volts(v)
             } else {
                 voltageText = "—"
             }
 
+            // 功耗：从 headline 获取计算功率或直接由 V*A 计算
+            let powerVal: Double? = {
+                if let headline = self.monitor?.headline {
+                    return headline.watts
+                }
+                if let v = voltageVal, let a = currentVal {
+                    return abs(v * a)
+                }
+                return nil
+            }()
+
             let powerText: String
-            if let p = snapshot.power {
+            if let p = powerVal {
                 powerText = Formatting.watts(p) + " W"
             } else {
                 powerText = "—"
             }
 
             let cpuTempText: String
-            if let cpu = snapshot.temperaturesByZone[.soc]?.hottest {
-                cpuTempText = Formatting.temperature(cpu.celsius)
+            if let cpu = snapshot.temperature(in: .soc) {
+                cpuTempText = Formatting.temperature(cpu)
             } else {
                 cpuTempText = "—"
             }
 
             let battTempText: String
-            if let batt = snapshot.temperaturesByZone[.battery]?.hottest {
-                battTempText = Formatting.temperature(batt.celsius)
+            if let batt = snapshot.temperature(in: .battery) {
+                battTempText = Formatting.temperature(batt)
             } else {
                 battTempText = "—"
             }
 
             let chargerTempText: String
-            if let chg = snapshot.temperaturesByZone[.charger]?.hottest {
-                chargerTempText = Formatting.temperature(chg.celsius)
+            if let chg = snapshot.temperature(in: .charger) {
+                chargerTempText = Formatting.temperature(chg)
             } else {
                 chargerTempText = "—"
             }
@@ -215,7 +231,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
                 .foregroundColor: UIColor(white: 0.6, alpha: 1.0)
             ]
-            let titleString = "MiniWatts • " + (snapshot.isPluggedIn ? "Charging" : "Discharging")
+            let isConnected = snapshot.externalConnected
+            let titleString = "MiniWatts • " + (isConnected ? "Charging" : "Discharging")
             (titleString as NSString).draw(at: CGPoint(x: 14, y: 10), withAttributes: titleAttrs)
 
             // 网格布局：2行 × 3列
