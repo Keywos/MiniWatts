@@ -27,10 +27,10 @@ struct RootView: View {
             case .active:
                 monitor.start()
             case .background:
-                // Sensor reads are pointless while suspended, so the tick stops —
-                // but an open charge session stays open. It ends when the charger
-                // comes out, not when the app goes off screen.
-                monitor.pause()
+                // 如果当前画中画正在运行，不要暂停 monitor，否则画中画无法持续获取电量/功率传感器数据
+                if !PiPManager.shared.isPiPActive {
+                    monitor.pause()
+                }
             default:
                 // `.inactive` is transient and the app is still on screen for most
                 // of it: a pulled-down Control Center, the app switcher, an

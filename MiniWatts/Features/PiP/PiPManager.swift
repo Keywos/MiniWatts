@@ -98,6 +98,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         let controller = AVPictureInPictureController(contentSource: contentSource)
         controller.delegate = self
         controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.requiresLinearPlayback = true
         self.pipController = controller
 
         // 预热并喂一帧，使 isPictureInPicturePossible 尽快就绪
@@ -239,6 +240,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             roundedPath.stroke()
 
             // 提取数据
+            let batteryPercent = snapshot.percent
+
             // 电流：优先使用电池轨/输入电流，或 simulator 寄存器电流
             let currentVal = snapshot.batteryRailCurrent ?? snapshot.usbInputCurrent ?? snapshot.wirelessInputCurrent ?? snapshot.registryCurrent
             let currentText: String
@@ -296,14 +299,26 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 chargerTempText = "—"
             }
 
-            // 顶部 MiniWatts 标题 & 充电/放电状态
+            // 顶部 MiniWatts 标题 & 充电/放电状态 & 电量百分比
+            let isConnected = snapshot.externalConnected
+            let statusString = isConnected ? "Charging" : "Discharging"
+            let titleString = "MiniWatts • \(statusString)"
             let titleAttrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
-                .foregroundColor: UIColor(white: 0.6, alpha: 1.0)
+                .foregroundColor: UIColor(white: 0.7, alpha: 1.0)
             ]
-            let isConnected = snapshot.externalConnected
-            let titleString = "MiniWatts • " + (isConnected ? "Charging" : "Discharging")
             (titleString as NSString).draw(at: CGPoint(x: 14, y: 10), withAttributes: titleAttrs)
+
+            if let pct = batteryPercent {
+                let batteryString = "🔋 \(pct)%"
+                let batteryAttrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
+                    .foregroundColor: UIColor.white
+                ]
+                let batterySize = (batteryString as NSString).size(withAttributes: batteryAttrs)
+                let batteryX = canvasSize.width - 14 - batterySize.width
+                (batteryString as NSString).draw(at: CGPoint(x: batteryX, y: 9), withAttributes: batteryAttrs)
+            }
 
             // 网格布局：2行 × 3列
             // 行 1: 电流 (Current) | 电压 (Voltage) | 功耗 (Power)
@@ -373,7 +388,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
         let attributes: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue as Any,
-            kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue as Any
+            kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue as Any,
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
         ]
 
         var pixelBuffer: CVPixelBuffer?
