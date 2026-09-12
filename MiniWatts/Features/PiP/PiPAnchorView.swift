@@ -9,7 +9,7 @@ struct PiPAnchorView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = SampleBufferContainerView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
         view.backgroundColor = .black
-        view.alpha = 0.01 // 不影响用户视觉，但满足系统“可见且在屏幕上”的要求
+        view.alpha = 0.05
         view.isUserInteractionEnabled = false
         
         DispatchQueue.main.async {

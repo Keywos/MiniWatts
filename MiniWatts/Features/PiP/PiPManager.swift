@@ -63,15 +63,29 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             layer = AVSampleBufferDisplayLayer()
             layer.frame = CGRect(x: 0, y: 0, width: 64, height: 36)
             layer.videoGravity = .resizeAspect
-            layer.opacity = 0.01
+            layer.opacity = 0.05
 
             let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
             sourceView.backgroundColor = .black
-            sourceView.alpha = 0.01
+            sourceView.alpha = 0.05
             sourceView.layer.addSublayer(layer)
             containerView.addSubview(sourceView)
 
             self.pipSourceView = sourceView
+        }
+
+        // 配置时间基准以确保 DisplayLayer 正常驱动帧播放
+        var timebase: CMTimebase?
+        let timebaseStatus = CMTimebaseCreateWithSourceClock(
+            allocator: kCFAllocatorDefault,
+            sourceClock: CMClockGetHostTimeClock(),
+            timebaseOut: &timebase
+        )
+        if timebaseStatus == noErr, let tb = timebase {
+            let now = CMClockGetTime(CMClockGetHostTimeClock())
+            CMTimebaseSetTime(tb, time: now)
+            CMTimebaseSetRate(tb, rate: 1.0)
+            layer.controlTimebase = tb
         }
 
         self.displayLayer = layer
@@ -155,41 +169,56 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     }
 
     private func renderCurrentSnapshot() {
-        guard let displayLayer = displayLayer, displayLayer.isReadyForMoreMediaData else { return }
+        guard let displayLayer = displayLayer else { return }
         guard let monitor = monitor else { return }
 
         let snapshot = monitor.snapshot
         let image = renderImage(snapshot: snapshot)
 
-        if let pixelBuffer = pixelBuffer(from: image) {
-            var timingInfo = CMSampleTimingInfo(
-                duration: CMTime(value: 1, timescale: 30),
-                presentationTimeStamp: CMTime(seconds: CACurrentMediaTime(), preferredTimescale: 600),
-                decodeTimeStamp: .invalid
-            )
+        guard let pixelBuffer = pixelBuffer(from: image) else { return }
 
-            var formatDescription: CMFormatDescription?
-            CMVideoFormatDescriptionCreateForImageBuffer(
-                allocator: kCFAllocatorDefault,
-                imageBuffer: pixelBuffer,
-                formatDescriptionOut: &formatDescription
-            )
+        // 获取当前 Host Clock 的真实时间戳，或回退到 CACurrentMediaTime
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
+        var timingInfo = CMSampleTimingInfo(
+            duration: CMTime(seconds: 1.0, preferredTimescale: 600),
+            presentationTimeStamp: now,
+            decodeTimeStamp: .invalid
+        )
 
-            guard let format = formatDescription else { return }
+        var formatDescription: CMFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &formatDescription
+        )
 
-            var sampleBuffer: CMSampleBuffer?
-            CMSampleBufferCreateReadyWithImageBuffer(
-                allocator: kCFAllocatorDefault,
-                imageBuffer: pixelBuffer,
-                formatDescription: format,
-                sampleTiming: &timingInfo,
-                sampleBufferOut: &sampleBuffer
-            )
+        guard let format = formatDescription else { return }
 
-            if let sampleBuffer = sampleBuffer {
-                displayLayer.enqueue(sampleBuffer)
+        var sampleBuffer: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescription: format,
+            sampleTiming: &timingInfo,
+            sampleBufferOut: &sampleBuffer
+        )
+
+        guard let sampleBuffer = sampleBuffer else { return }
+
+        // 设置立即展示附件标记，避免图层等待同步时机导致画面黑屏
+        if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: true) {
+            let count = CFArrayGetCount(attachmentsArray)
+            if count > 0 {
+                let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachmentsArray, 0), to: CFMutableDictionary.self)
+                CFDictionarySetValue(
+                    dict,
+                    Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                    Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
+                )
             }
         }
+
+        displayLayer.enqueue(sampleBuffer)
     }
 
     // MARK: - 画面绘制
@@ -352,7 +381,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             kCFAllocatorDefault,
             width,
             height,
-            kCVPixelFormatType_32ARGB,
+            kCVPixelFormatType_32BGRA,
             attributes as CFDictionary,
             &pixelBuffer
         )
@@ -362,7 +391,10 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         }
 
         CVPixelBufferLockBaseAddress(buffer, [])
-        let pixelData = CVPixelBufferGetBaseAddress(buffer)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let pixelData = CVPixelBufferGetBaseAddress(buffer) else {
+            return nil
+        }
 
         let rgbColorSpace = CGColorSpaceCreateDeviceRGB()
         let context = CGContext(
@@ -372,14 +404,13 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             bitsPerComponent: 8,
             bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
             space: rgbColorSpace,
-            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         )
 
         if let cgImage = image.cgImage, let context = context {
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
 
-        CVPixelBufferUnlockBaseAddress(buffer, [])
         return buffer
     }
 
