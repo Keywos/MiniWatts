@@ -58,12 +58,14 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         let layer: AVSampleBufferDisplayLayer
         if let customView = containerView as? SampleBufferContainerView {
             layer = customView.sampleBufferLayer
-            layer.videoGravity = .resizeAspect
+            layer.videoGravity = .resizeAspectFill
+            layer.backgroundColor = UIColor.black.cgColor
             self.pipSourceView = customView
         } else {
             layer = AVSampleBufferDisplayLayer()
             layer.frame = CGRect(x: 0, y: 0, width: 64, height: 36)
-            layer.videoGravity = .resizeAspect
+            layer.videoGravity = .resizeAspectFill
+            layer.backgroundColor = UIColor.black.cgColor
             layer.opacity = 0.05
 
             let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
@@ -227,7 +229,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
     private func renderImage(snapshot: PowerSnapshot) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0 // 已经使用 640x360 逻辑尺寸，1.0 即可保持 1:1 像素映射高清晰度
+        format.scale = 2.0 // 输出 1280x720 
         let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
         return renderer.image { ctx in
             let rect = CGRect(origin: .zero, size: canvasSize)
@@ -235,13 +237,6 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             // 背景色 - 纯黑
             UIColor.black.setFill()
             ctx.fill(rect)
-
-            // 装饰卡片外框 - 纯黑底上的低调细边框，提供边界感
-            let cornerRadius: CGFloat = 20
-            let roundedPath = UIBezierPath(roundedRect: rect.insetBy(dx: 6, dy: 6), cornerRadius: cornerRadius)
-            UIColor(white: 0.15, alpha: 1.0).setStroke()
-            roundedPath.lineWidth = 1.5
-            roundedPath.stroke()
 
             // 提取数据
             let batteryPercent = snapshot.percent
@@ -304,10 +299,10 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             }
 
             // 上下左右安全边距
-            let paddingLeft: CGFloat = 22
-            let paddingRight: CGFloat = 20
-            let paddingTop: CGFloat = 22
-            let paddingBottom: CGFloat = 20
+            let paddingLeft: CGFloat = 36
+            let paddingRight: CGFloat = 28
+            let paddingTop: CGFloat = 34
+            let paddingBottom: CGFloat = 26
 
             // 顶部 MiniWatts 标题 & 充电/放电状态 & 电量百分比
             let isConnected = snapshot.externalConnected
@@ -323,7 +318,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 let batteryString = "\(pct)%"
                 let batteryAttrs: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 22, weight: .bold),
-                    .foregroundColor: UIColor.white
+                    .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
                 ]
                 let batterySize = (batteryString as NSString).size(withAttributes: batteryAttrs)
                 let batteryX = canvasSize.width - paddingRight - batterySize.width
@@ -369,7 +364,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row1Y)
             }
 
-            let row2Y: CGFloat = row1Y + 130
+            let row2Y: CGFloat = row1Y + 128
             for (idx, item) in row2.enumerated() {
                 let x = paddingLeft + CGFloat(idx) * (colWidth + colSpacing)
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row2Y)
