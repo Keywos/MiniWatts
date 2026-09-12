@@ -242,18 +242,48 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             // 提取数据
             // let batteryPercent = snapshot.percent
 
-            // 电流：优先使用电池轨/输入电流，或 simulator 寄存器电流
-            let currentVal = snapshot.batteryRailCurrent ?? snapshot.usbInputCurrent ?? snapshot.wirelessInputCurrent ?? snapshot.registryCurrent
+            // // 电流：优先使用电池轨/输入电流，或 simulator 寄存器电流
+            // let currentVal = snapshot.batteryRailCurrent ?? snapshot.usbInputCurrent ?? snapshot.wirelessInputCurrent ?? snapshot.registryCurrent
+            // let currentText: String
+            // if let a = currentVal {
+            //     currentText = Formatting.amps(abs(a))
+            // } else {
+            //     currentText = "—"
+            // }
+
+            // // 电压：优先使用电池轨/输入电压，或 simulator 寄存器电压
+            // let voltageVal = snapshot.batteryRailVoltage ?? snapshot.usbInputVoltage ?? snapshot.wirelessInputVoltage ?? snapshot.registryVoltage
+            // let voltageText: String
+            // if let v = voltageVal {
+            //     voltageText = Formatting.volts(v)
+            // } else {
+            //     voltageText = "—"
+            // }
+
+            // 电流：优先使用 USB 输入电流，其次无线输入/电池轨/模拟器寄存器
+            let currentVal =
+                snapshot.usbInputCurrent
+                ?? snapshot.wirelessInputCurrent
+                ?? snapshot.batteryRailCurrent
+                ?? snapshot.registryCurrent
+
             let currentText: String
+
             if let a = currentVal {
                 currentText = Formatting.amps(abs(a))
             } else {
                 currentText = "—"
             }
 
-            // 电压：优先使用电池轨/输入电压，或 simulator 寄存器电压
-            let voltageVal = snapshot.batteryRailVoltage ?? snapshot.usbInputVoltage ?? snapshot.wirelessInputVoltage ?? snapshot.registryVoltage
+            // 电压：优先使用 USB 输入电压，其次无线输入/电池轨/模拟器寄存器
+            let voltageVal =
+                snapshot.usbInputVoltage
+                ?? snapshot.wirelessInputVoltage
+                ?? snapshot.batteryRailVoltage
+                ?? snapshot.registryVoltage
+
             let voltageText: String
+
             if let v = voltageVal {
                 voltageText = Formatting.volts(v)
             } else {
