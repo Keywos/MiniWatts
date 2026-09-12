@@ -22,8 +22,10 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     private var timer: Timer?
     private weak var monitor: PowerMonitor?
 
-    private let canvasSize = CGSize(width: 640, height: 360)
-    private let outputSize = CGSize(width: 1280, height: 720)
+    // private let canvasSize = CGSize(width: 640, height: 360)
+    // private let outputSize = CGSize(width: 1280, height: 720)
+    private let canvasSize = CGSize(width: 640, height: 240)
+    private let outputSize = CGSize(width: 1280, height: 480)
 
     override private init() {
         super.init()
@@ -238,7 +240,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             ctx.fill(rect)
 
             // 提取数据
-            let batteryPercent = snapshot.percent
+            // let batteryPercent = snapshot.percent
 
             // 电流：优先使用电池轨/输入电流，或 simulator 寄存器电流
             let currentVal = snapshot.batteryRailCurrent ?? snapshot.usbInputCurrent ?? snapshot.wirelessInputCurrent ?? snapshot.registryCurrent
@@ -300,29 +302,29 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             // 上下左右安全边距
             let paddingLeft: CGFloat = 26
             let paddingRight: CGFloat = 18
-            let paddingTop: CGFloat = 24
-            let paddingBottom: CGFloat = 16
+            let paddingTop: CGFloat = 22
+            let paddingBottom: CGFloat = 18
 
             // 顶部 MiniWatts 标题 & 充电/放电状态 & 电量百分比
-            let isConnected = snapshot.externalConnected
-            let statusString = isConnected ? "Charging" : "Discharging"
-            let titleString = "Key • \(statusString)"
-            let titleAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 20, weight: .semibold),
-                .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
-            ]
-            (titleString as NSString).draw(at: CGPoint(x: paddingLeft, y: paddingTop), withAttributes: titleAttrs)
+            // let isConnected = snapshot.externalConnected
+            // let statusString = isConnected ? "Charging" : "Discharging"
+            // let titleString = "Key • \(statusString)"
+            // let titleAttrs: [NSAttributedString.Key: Any] = [
+            //     .font: UIFont.systemFont(ofSize: 20, weight: .semibold),
+            //     .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
+            // ]
+            // (titleString as NSString).draw(at: CGPoint(x: paddingLeft, y: paddingTop), withAttributes: titleAttrs)
 
-            if let pct = batteryPercent {
-                let batteryString = "\(pct)%"
-                let batteryAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 22, weight: .bold),
-                    .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
-                ]
-                let batterySize = (batteryString as NSString).size(withAttributes: batteryAttrs)
-                let batteryX = canvasSize.width - paddingRight - batterySize.width
-                (batteryString as NSString).draw(at: CGPoint(x: batteryX, y: paddingTop - 2), withAttributes: batteryAttrs)
-            }
+            // if let pct = batteryPercent {
+            //     let batteryString = "\(pct)%"
+            //     let batteryAttrs: [NSAttributedString.Key: Any] = [
+            //         .font: UIFont.systemFont(ofSize: 22, weight: .bold),
+            //         .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
+            //     ]
+            //     let batterySize = (batteryString as NSString).size(withAttributes: batteryAttrs)
+            //     let batteryX = canvasSize.width - paddingRight - batterySize.width
+            //     (batteryString as NSString).draw(at: CGPoint(x: batteryX, y: paddingTop - 2), withAttributes: batteryAttrs)
+            // }
 
             // 网格布局：2行 × 3列
             // 行 1: 电流 (Current) | 电压 (Voltage) | 功耗 (Power)
@@ -357,13 +359,15 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             let colSpacing: CGFloat = (availableWidth - (colWidth * 3)) / 2
 
             // 绘制第 1 行与第 2 行 (上下居中排版)
-            let row1Y: CGFloat = paddingTop + 44
+            // let row1Y: CGFloat = paddingTop + 44
+            let row1Y: CGFloat = 16
             for (idx, item) in row1.enumerated() {
                 let x = paddingLeft + CGFloat(idx) * (colWidth + colSpacing)
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row1Y)
             }
 
-            let row2Y: CGFloat = row1Y + 128
+            // let row2Y: CGFloat = row1Y + 128
+            let row2Y = row1Y + 108
             for (idx, item) in row2.enumerated() {
                 let x = paddingLeft + CGFloat(idx) * (colWidth + colSpacing)
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row2Y)
