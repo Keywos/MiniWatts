@@ -22,7 +22,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     private var timer: Timer?
     private weak var monitor: PowerMonitor?
 
-    private let canvasSize = CGSize(width: 320, height: 180)
+    /// 使用高清画质分辨率 (16:9)，避免在较大画中画尺寸下字体模糊
+    private let canvasSize = CGSize(width: 640, height: 360)
 
     override private init() {
         super.init()
@@ -225,18 +226,21 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     // MARK: - 画面绘制
 
     private func renderImage(snapshot: PowerSnapshot) -> UIImage {
-        let renderer = UIGraphicsImageRenderer(size: canvasSize)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0 // 已经使用 640x360 逻辑尺寸，1.0 即可保持 1:1 像素映射高清晰度
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
         return renderer.image { ctx in
             let rect = CGRect(origin: .zero, size: canvasSize)
 
-            // 背景色 - 深黑底
-            UIColor(white: 0.08, alpha: 1.0).setFill()
+            // 背景色 - 纯黑
+            UIColor.black.setFill()
             ctx.fill(rect)
 
-            // 装饰卡片外框
-            let roundedPath = UIBezierPath(roundedRect: rect.insetBy(dx: 4, dy: 4), cornerRadius: 14)
-            UIColor(white: 0.16, alpha: 1.0).setStroke()
-            roundedPath.lineWidth = 1.0
+            // 装饰卡片外框 - 纯黑底上的低调细边框，提供边界感
+            let cornerRadius: CGFloat = 20
+            let roundedPath = UIBezierPath(roundedRect: rect.insetBy(dx: 6, dy: 6), cornerRadius: cornerRadius)
+            UIColor(white: 0.15, alpha: 1.0).setStroke()
+            roundedPath.lineWidth = 1.5
             roundedPath.stroke()
 
             // 提取数据
@@ -299,25 +303,31 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 chargerTempText = "—"
             }
 
+            // 上下左右安全边距
+            let paddingLeft: CGFloat = 22
+            let paddingRight: CGFloat = 20
+            let paddingTop: CGFloat = 22
+            let paddingBottom: CGFloat = 20
+
             // 顶部 MiniWatts 标题 & 充电/放电状态 & 电量百分比
             let isConnected = snapshot.externalConnected
             let statusString = isConnected ? "Charging" : "Discharging"
-            let titleString = "MiniWatts • \(statusString)"
+            let titleString = "Key • \(statusString)"
             let titleAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
-                .foregroundColor: UIColor(white: 0.7, alpha: 1.0)
+                .font: UIFont.systemFont(ofSize: 20, weight: .semibold),
+                .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
             ]
-            (titleString as NSString).draw(at: CGPoint(x: 14, y: 10), withAttributes: titleAttrs)
+            (titleString as NSString).draw(at: CGPoint(x: paddingLeft, y: paddingTop), withAttributes: titleAttrs)
 
             if let pct = batteryPercent {
-                let batteryString = "🔋 \(pct)%"
+                let batteryString = "\(pct)%"
                 let batteryAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .bold),
+                    .font: UIFont.systemFont(ofSize: 22, weight: .bold),
                     .foregroundColor: UIColor.white
                 ]
                 let batterySize = (batteryString as NSString).size(withAttributes: batteryAttrs)
-                let batteryX = canvasSize.width - 14 - batterySize.width
-                (batteryString as NSString).draw(at: CGPoint(x: batteryX, y: 9), withAttributes: batteryAttrs)
+                let batteryX = canvasSize.width - paddingRight - batterySize.width
+                (batteryString as NSString).draw(at: CGPoint(x: batteryX, y: paddingTop - 2), withAttributes: batteryAttrs)
             }
 
             // 网格布局：2行 × 3列
@@ -329,12 +339,12 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 let color: UIColor
             }
 
-            let yellowColor = UIColor(red: 0.98, green: 0.78, blue: 0.25, alpha: 1.0)
-            let blueColor = UIColor(red: 0.35, green: 0.65, blue: 0.98, alpha: 1.0)
-            let greenColor = UIColor(red: 0.32, green: 0.85, blue: 0.45, alpha: 1.0)
-            let orangeColor = UIColor(red: 0.98, green: 0.55, blue: 0.25, alpha: 1.0)
-            let cyanColor = UIColor(red: 0.35, green: 0.85, blue: 0.85, alpha: 1.0)
-            let purpleColor = UIColor(red: 0.82, green: 0.55, blue: 0.98, alpha: 1.0)
+            let yellowColor = UIColor(red: 1.0, green: 0.82, blue: 0.28, alpha: 1.0)
+            let blueColor = UIColor(red: 0.40, green: 0.72, blue: 1.0, alpha: 1.0)
+            let greenColor = UIColor(red: 0.35, green: 0.90, blue: 0.50, alpha: 1.0)
+            let orangeColor = UIColor(red: 1.0, green: 0.60, blue: 0.28, alpha: 1.0)
+            let cyanColor = UIColor(red: 0.40, green: 0.90, blue: 0.90, alpha: 1.0)
+            let purpleColor = UIColor(red: 0.86, green: 0.60, blue: 1.0, alpha: 1.0)
 
             let row1: [Item] = [
                 Item(label: "CURRENT", value: currentText, color: yellowColor),
@@ -348,21 +358,20 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
                 Item(label: "CHG IC", value: chargerTempText, color: purpleColor)
             ]
 
-            let colWidth: CGFloat = 96
-            let colStartX: CGFloat = 16
-            let colSpacing: CGFloat = (canvasSize.width - (colStartX * 2) - (colWidth * 3)) / 2
+            let availableWidth = canvasSize.width - paddingLeft - paddingRight
+            let colWidth: CGFloat = 170
+            let colSpacing: CGFloat = (availableWidth - (colWidth * 3)) / 2
 
-            // 绘制第 1 行
-            let row1Y: CGFloat = 34
+            // 绘制第 1 行与第 2 行 (上下居中排版)
+            let row1Y: CGFloat = paddingTop + 44
             for (idx, item) in row1.enumerated() {
-                let x = colStartX + CGFloat(idx) * (colWidth + colSpacing)
+                let x = paddingLeft + CGFloat(idx) * (colWidth + colSpacing)
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row1Y)
             }
 
-            // 绘制第 2 行
-            let row2Y: CGFloat = 104
+            let row2Y: CGFloat = row1Y + 130
             for (idx, item) in row2.enumerated() {
-                let x = colStartX + CGFloat(idx) * (colWidth + colSpacing)
+                let x = paddingLeft + CGFloat(idx) * (colWidth + colSpacing)
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row2Y)
             }
         }
@@ -370,16 +379,16 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
     private func drawItem(_ item: (label: String, value: String, color: UIColor), atX x: CGFloat, topY y: CGFloat) {
         let labelAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 10, weight: .bold),
-            .foregroundColor: UIColor(white: 0.5, alpha: 1.0)
+            .font: UIFont.systemFont(ofSize: 18, weight: .bold),
+            .foregroundColor: UIColor(white: 0.55, alpha: 1.0)
         ]
         (item.label as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: labelAttrs)
 
         let valueAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
+            .font: UIFont.monospacedSystemFont(ofSize: 32, weight: .bold),
             .foregroundColor: item.color
         ]
-        (item.value as NSString).draw(at: CGPoint(x: x, y: y + 17), withAttributes: valueAttrs)
+        (item.value as NSString).draw(at: CGPoint(x: x, y: y + 28), withAttributes: valueAttrs)
     }
 
     private func pixelBuffer(from image: UIImage) -> CVPixelBuffer? {
