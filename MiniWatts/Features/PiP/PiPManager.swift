@@ -360,7 +360,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
             // 绘制第 1 行与第 2 行 (上下居中排版)
             // let row1Y: CGFloat = paddingTop + 44
-            let row1Y: CGFloat = 16
+            let row1Y: CGFloat = 28
             for (idx, item) in row1.enumerated() {
                 let x = paddingLeft + CGFloat(idx) * (colWidth + colSpacing)
                 drawItem((label: item.label, value: item.value, color: item.color), atX: x, topY: row1Y)
