@@ -55,27 +55,25 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
         configureAudioSession()
 
-        let layer: AVSampleBufferDisplayLayer
-        if let customView = containerView as? SampleBufferContainerView {
-            layer = customView.sampleBufferLayer
-            layer.videoGravity = .resizeAspectFill
-            layer.backgroundColor = UIColor.black.cgColor
-            self.pipSourceView = customView
-        } else {
-            layer = AVSampleBufferDisplayLayer()
-            layer.frame = CGRect(x: 0, y: 0, width: 64, height: 36)
-            layer.videoGravity = .resizeAspectFill
-            layer.backgroundColor = UIColor.black.cgColor
-            layer.opacity = 0.05
+        let layer = AVSampleBufferDisplayLayer()
 
-            let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
-            sourceView.backgroundColor = .black
-            sourceView.alpha = 0.05
-            sourceView.layer.addSublayer(layer)
-            containerView.addSubview(sourceView)
+        layer.videoGravity = .resizeAspect
+        layer.backgroundColor = UIColor.black.cgColor
 
-            self.pipSourceView = sourceView
-        }
+        let sourceView = UIView(
+            frame: CGRect(x: 0, y: 0, width: 64, height: 36)
+        )
+
+        sourceView.backgroundColor = .black
+        sourceView.alpha = 0.01
+
+        layer.frame = sourceView.bounds
+        sourceView.layer.addSublayer(layer)
+
+        containerView.addSubview(sourceView)
+
+        self.pipSourceView = sourceView
+        self.displayLayer = layer
 
         // 配置时间基准以确保 DisplayLayer 正常驱动帧播放
         var timebase: CMTimebase?
