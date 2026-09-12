@@ -300,9 +300,9 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             }
 
             // 上下左右安全边距
-            let paddingLeft: CGFloat = 26
-            let paddingRight: CGFloat = 18
-            let paddingTop: CGFloat = 22
+            let paddingLeft: CGFloat = 35
+            let paddingRight: CGFloat = 15
+            let paddingTop: CGFloat = 32
             let paddingBottom: CGFloat = 18
 
             // 顶部 MiniWatts 标题 & 充电/放电状态 & 电量百分比
@@ -390,8 +390,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     }
 
     private func pixelBuffer(from image: UIImage) -> CVPixelBuffer? {
-        let width = 1280
-        let height = 720
+        let width = Int(outputSize.width)
+        let height = Int(outputSize.height)
 
         let attributes: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
