@@ -22,8 +22,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     private var timer: Timer?
     private weak var monitor: PowerMonitor?
 
-    /// 使用高清画质分辨率 (16:9)，避免在较大画中画尺寸下字体模糊
     private let canvasSize = CGSize(width: 640, height: 360)
+    private let outputSize = CGSize(width: 1280, height: 720)
 
     override private init() {
         super.init()
@@ -229,7 +229,8 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
     private func renderImage(snapshot: PowerSnapshot) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 2.0 // 输出 1280x720 
+        format.scale = 2.0
+        format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
         return renderer.image { ctx in
             let rect = CGRect(origin: .zero, size: canvasSize)
@@ -299,10 +300,10 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             }
 
             // 上下左右安全边距
-            let paddingLeft: CGFloat = 36
-            let paddingRight: CGFloat = 28
-            let paddingTop: CGFloat = 34
-            let paddingBottom: CGFloat = 26
+            let paddingLeft: CGFloat = 26
+            let paddingRight: CGFloat = 18
+            let paddingTop: CGFloat = 24
+            let paddingBottom: CGFloat = 16
 
             // 顶部 MiniWatts 标题 & 充电/放电状态 & 电量百分比
             let isConnected = snapshot.externalConnected
@@ -387,16 +388,17 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     }
 
     private func pixelBuffer(from image: UIImage) -> CVPixelBuffer? {
-        let width = Int(canvasSize.width)
-        let height = Int(canvasSize.height)
+        let width = 1280
+        let height = 720
 
         let attributes: [CFString: Any] = [
-            kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue as Any,
-            kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue as Any,
-            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            kCVPixelBufferCGImageCompatibilityKey: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+            kCVPixelBufferIOSurfacePropertiesKey: [:]
         ]
 
         var pixelBuffer: CVPixelBuffer?
+
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,
             width,
@@ -406,30 +408,49 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
             &pixelBuffer
         )
 
-        guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
+        guard status == kCVReturnSuccess,
+            let buffer = pixelBuffer,
+            let cgImage = image.cgImage else {
             return nil
         }
 
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        guard let pixelData = CVPixelBufferGetBaseAddress(buffer) else {
+    CVPixelBufferLockBaseAddress(buffer, [])
+
+        defer {
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+        }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else {
             return nil
         }
 
-        let rgbColorSpace = CGColorSpaceCreateDeviceRGB()
-        let context = CGContext(
-            data: pixelData,
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+
+        guard let context = CGContext(
+            data: baseAddress,
             width: width,
             height: height,
             bitsPerComponent: 8,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
-            space: rgbColorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        )
-
-        if let cgImage = image.cgImage, let context = context {
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo:
+                CGImageAlphaInfo.premultipliedFirst.rawValue |
+                CGBitmapInfo.byteOrder32Little.rawValue
+        ) else {
+            return nil
         }
+
+        context.interpolationQuality = .high
+
+        context.draw(
+            cgImage,
+            in: CGRect(
+                x: 0,
+                y: 0,
+                width: CGFloat(width),
+                height: CGFloat(height)
+            )
+        )
 
         return buffer
     }
