@@ -39,7 +39,11 @@ nonisolated struct ZoneTemperatures: Identifiable, Hashable {
 /// name — once per sensor per scan. At one snapshot a second and several bodies per
 /// snapshot that added up to real work in the render pass. The raw dictionaries stay
 /// computed: those are single hash lookups.
-nonisolated struct PowerSnapshot {
+/// SensorProbe hands this immutable snapshot to the main actor. Its raw IOKit
+/// property-list dictionaries are bridged to Swift dictionaries and no caller
+/// mutates their values after construction.
+/// TODO: model raw diagnostics as typed Sendable values and remove @unchecked.
+nonisolated struct PowerSnapshot: @unchecked Sendable {
     let date: Date
     let registry: [String: Any]
     let powerSource: [String: Any]?
@@ -95,7 +99,14 @@ nonisolated struct PowerSnapshot {
         var temperatures: [HIDSensors.Reading] = []
         for reading in sensors {
             if byName[reading.name] == nil { byName[reading.name] = reading }
-            if reading.kind == .temperature { temperatures.append(reading) }
+            // A reading on the temperature page that no phone could produce is not a
+            // temperature — it is a sentinel or a raw counter, and it used to be drawn
+            // on the heat map as if it were a reading. It stays in `sensors`, which
+            // Raw data shows unedited, and out of everything that treats a number as
+            // degrees.
+            if reading.kind == .temperature, HIDSensors.plausibleCelsius.contains(reading.value) {
+                temperatures.append(reading)
+            }
         }
         self.temperatures = temperatures
 
@@ -241,7 +252,14 @@ nonisolated struct PowerSnapshot {
     var registryVoltage: Double? { int("Voltage", in: registry).map { Double($0) / 1000 } }
     /// Positive while charging, negative while discharging.
     var registryCurrent: Double? { int("InstantAmperage", in: registry).map { Double($0) / 1000 } }
-    var registryTemperature: Double? { int("Temperature", in: registry).map { Double($0) / 100 } }
+    /// Hundredths of a degree on every model checked — but a model that scales it
+    /// differently would put a nonsense number on the Power tab, so it goes through
+    /// the same plausibility check as the HID sensors.
+    var registryTemperature: Double? {
+        int("Temperature", in: registry)
+            .map { Double($0) / 100 }
+            .flatMap { HIDSensors.plausibleCelsius.contains($0) ? $0 : nil }
+    }
     var cycleCount: Int? { int("CycleCount", in: registry) }
     var designCapacity: Int? { int("DesignCapacity", in: registry) }
     var maxCapacity: Int? { int("AppleRawMaxCapacity", in: registry) ?? int("NominalChargeCapacity", in: registry) }
@@ -346,6 +364,67 @@ nonisolated struct PowerSnapshot {
     }
 
     var adapterPowerTier: Int? { int("AdapterPowerTier", in: adapter) }
+
+    // MARK: - The cable, by its effect
+
+    /// The smallest input current at which a voltage drop means anything. Below it
+    /// the phone is barely drawing, the drop is inside the sensor's noise, and
+    /// dividing by the current turns that noise into a large resistance.
+    static let measurableInputAmps = 0.15
+
+    /// The negotiated voltage minus what is actually measured at the port.
+    ///
+    /// The subtrahend is a measurement; the minuend is the contract, which is a
+    /// ceiling and not a reading (see `adapterCeilingWatts`). For a fixed PD profile
+    /// those are the same number — the supply regulates to that voltage — so the
+    /// difference is the drop across the cable and the two plugs. This is the quick
+    /// answer that `PathResistanceMeter` deliberately refuses to give: no waiting for
+    /// the current to move, at the cost of trusting the contract voltage.
+    var inputVoltageDropVolts: Double? {
+        guard !isWirelessInput, let measured = usbInputVoltage, measured > 0.5,
+              let contract = adapterVoltageMillivolts, contract > 0 else { return nil }
+        return Double(contract) / 1000 - measured
+    }
+
+    /// Path resistance from a single sample: the drop divided by the current through
+    /// it. Below `measurableInputAmps` there is no meaningful drop to
+    /// divide, and dividing by a near-zero current would produce a large number out
+    /// of nothing, so it goes nil instead.
+    var inputPathMilliohms: Double? {
+        guard let drop = inputVoltageDropVolts, drop > 0,
+              let current = usbInputCurrent, current >= Self.measurableInputAmps
+        else { return nil }
+        return drop / current * 1000
+    }
+
+    /// What the phone is taking as a share of the current the adapter offered, 0…1.
+    var inputCurrentUtilisation: Double? {
+        guard !isWirelessInput, let current = usbInputCurrent,
+              let ceiling = adapterCurrentMilliamps, ceiling > 0 else { return nil }
+        return current / (Double(ceiling) / 1000)
+    }
+
+    /// True when the port voltage has collapsed well past what PD regulation allows
+    /// *and* the phone is taking far less than it was offered.
+    ///
+    /// Either half alone is ordinary. A small drop is just cable resistance at a
+    /// current worth drawing; a low draw on its own is what a full battery, a hot
+    /// phone or a charging hold looks like. Together they are the signature of a
+    /// charge IC holding the current down to keep the rail up — the phone cannot
+    /// take more because taking more would pull the voltage lower still.
+    ///
+    /// 5% is the PD regulation tolerance for a fixed profile, so anything past it is
+    /// the path rather than the supply. Measured on an iPhone 17 through a
+    /// non-original cable into a Mac's USB-C port: a 5.00 V contract reading 4.23 V
+    /// at the port — 15% down — while the phone drew 0.95 A of the 3 A on offer,
+    /// with the battery at 65% and 35 °C. The caller still has to rule out heat and
+    /// a nearly-full battery; neither is the snapshot's to know.
+    var isInputSagging: Bool {
+        guard let drop = inputVoltageDropVolts, drop > 0,
+              let contract = adapterVoltageMillivolts, contract > 0,
+              let utilisation = inputCurrentUtilisation else { return false }
+        return drop / (Double(contract) / 1000) >= 0.05 && utilisation < 0.6
+    }
 
     /// Every profile the adapter advertised in its PD menu.
     var adapterProfiles: [PDProfile] {

@@ -33,7 +33,6 @@ struct DashboardView: View {
             } label: {
                 Image(systemName: "pip.enter")
             }
-            .tint(.mwAccent)
 
             Button { showingSettings = true } label: { Image(systemName: "gearshape") }
                 .tint(.mwAccent)

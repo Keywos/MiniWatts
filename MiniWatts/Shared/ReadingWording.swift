@@ -5,7 +5,7 @@ import Foundation
 /// Compiled into both targets: the Power tab, the widget, the live activity and the
 /// floating meter all describe the same reading, and they have already drifted once.
 /// Copy only — no views. The catalogs of both targets carry these strings.
-extension ChargeReading.Source {
+nonisolated extension ChargeReading.Source {
     var caption: LocalizedStringResource {
         switch self {
         case .charger: return "from charger"
@@ -16,7 +16,7 @@ extension ChargeReading.Source {
     }
 }
 
-extension ChargeReading {
+nonisolated extension ChargeReading {
     var statusTitle: LocalizedStringResource {
         if isOnHold { return "Charging on hold" }
         if isFull { return "Full" }

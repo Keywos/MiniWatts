@@ -25,6 +25,10 @@ final class PowerMonitor {
     /// Watts estimated from how fast the percentage moves. The only way to see
     /// discharge power: no discharge-current sensor is exposed to a sandboxed app.
     private(set) var rateEstimateWatts: Double?
+    /// Resistance of the whole charging path — charger, cable, both plugs — inferred
+    /// from how the port voltage sags as the current rises. Nil until the current
+    /// has moved far enough for the fit to mean anything. See `PathResistanceMeter`.
+    private(set) var pathResistance: PathResistanceEstimate?
     private(set) var diagnostics: [String] = []
     /// Every power source powerd reports, not just the internal battery.
     ///
@@ -46,7 +50,30 @@ final class PowerMonitor {
         didSet { UserDefaults.standard.set(keepScreenAwakeWhileCharging, forKey: Self.keepAwakeKey) }
     }
 
+    /// Whether to show the charging live activity on the Lock Screen, in the Dynamic
+    /// Island and in StandBy. Applied by `RootView`, like the setting above.
+    var showsLiveActivityWhileCharging: Bool {
+        didSet { UserDefaults.standard.set(showsLiveActivityWhileCharging, forKey: Self.liveActivityKey) }
+    }
+
+    /// The reading used by the compact Dynamic Island presentation. This changes
+    /// presentation only; the activity remains charger-bound.
+    var liveActivityMetric: LiveActivityMetric {
+        didSet {
+            UserDefaults.standard.set(liveActivityMetric.rawValue,
+                                      forKey: Self.liveActivityMetricKey)
+        }
+    }
+
     let thermal = ThermalMonitor()
+
+    /// Called at the end of every tick. `RootView` installs it and fans the reading
+    /// out to the live activity, the widget and the floating meter.
+    ///
+    /// A closure rather than SwiftUI's `onChange`, which is what this used to be:
+    /// view updates stop when the app leaves the screen, and off screen is exactly
+    /// when the floating meter is the only thing still showing a number.
+    var onTick: ((PowerSnapshot) -> Void)?
 
     /// Usable pack energy, used to turn %/h into watts. Read from IOKit where the
     /// sandbox allows it, otherwise from the value the user sets in Settings.
@@ -63,7 +90,7 @@ final class PowerMonitor {
         didSet { UserDefaults.standard.set(configuredBatteryWattHours, forKey: Self.wattHoursKey) }
     }
 
-    var sensorsAvailable: Bool { sensors != nil && !(sensors?.isEmpty ?? true) }
+    var sensorsAvailable: Bool { sensorServiceCount > 0 }
     var deviceModelIdentifier: String { Self.machineIdentifier }
 
     // MARK: Private
@@ -71,12 +98,14 @@ final class PowerMonitor {
     private static let nominalCellVoltage = 3.87
     private static let wattHoursKey = "batteryWattHours"
     private static let keepAwakeKey = "keepScreenAwakeWhileCharging"
+    private static let liveActivityKey = "showsLiveActivityWhileCharging"
+    private static let liveActivityMetricKey = "liveActivityMetric"
     private static let liveWindow = 180
 
-    private let battery = IOKitBattery()
-    private let sensors = HIDSensors()
+    private let probeService = SensorProbe()
     private let batteryCenter = BatteryCenterBridge()
     private let energy = EnergyAccumulator()
+    private let resistance = PathResistanceMeter()
     private let store = SessionStore()
 
     private var task: Task<Void, Never>?
@@ -94,6 +123,7 @@ final class PowerMonitor {
     private var discardedStoredSessions = false
     private var percentLog: [(date: Date, percent: Int)] = []
     private var lastChargingFlag: Bool?
+    private var sensorServiceCount: Int = 0
 
     init() {
         let defaults = UserDefaults.standard
@@ -102,6 +132,10 @@ final class PowerMonitor {
         // Defaults to on: recording a whole charge is the point of the History tab,
         // and it cannot happen if the screen locks after thirty seconds.
         keepScreenAwakeWhileCharging = defaults.object(forKey: Self.keepAwakeKey) as? Bool ?? true
+        showsLiveActivityWhileCharging = defaults.object(forKey: Self.liveActivityKey) as? Bool ?? true
+        liveActivityMetric = defaults.string(forKey: Self.liveActivityMetricKey)
+            .flatMap(LiveActivityMetric.init(rawValue:)) ?? .chargingPower
+        sensorServiceCount = probeService.initialServiceCount
         collectDiagnostics()
         Task { await loadStoredSessions() }
     }
@@ -134,12 +168,10 @@ final class PowerMonitor {
 
     func start() {
         guard task == nil else { return }
-        refresh()
         task = Task { [weak self] in
-            while !Task.isCancelled {
+            while let self, !Task.isCancelled {
+                await self.refresh()
                 try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
-                self?.refresh()
             }
         }
     }
@@ -161,31 +193,25 @@ final class PowerMonitor {
 
     // MARK: Refresh
 
-    func refresh() {
+    private func refresh() async {
         tick += 1
         thermal.update()
 
-        let registry = battery?.readRegistryProperties() ?? [:]
-        let sources = battery?.readPowerSources() ?? []
-        #if DEBUG
-        // Only the Raw data screen reads this, and that screen is Debug-only, so a
-        // Release build was republishing the whole array once a second for nobody.
-        powerSources = sources
-        #endif
-        let internalBattery = sources.first { ($0["Type"] as? String) == "InternalBattery" } ?? sources.first
-
-        let current = PowerSnapshot(date: .now,
-                                    registry: registry,
-                                    powerSource: internalBattery,
-                                    adapterDetails: battery?.readAdapterDetails(),
-                                    sensors: sensors?.read() ?? [],
-                                    chargeStatus: battery?.readChargeStatus())
+        let result = await probeService.read(lastExternalConnected: lastExternalConnected,
+                                             periodicRescan: tick % 15 == 0)
+        guard !Task.isCancelled else { return }
+        let current = result.snapshot
+        // Only Raw data reads this. It used to be assigned under `#if DEBUG`, when that
+        // screen was Debug-only; now that the page ships, the guard made its "powerd
+        // power sources" panel report none in every release build — a false statement
+        // on the one page whose job is to show what the probes actually returned. The
+        // write costs nothing while that page is closed: `@Observable` invalidates only
+        // views that read the property, and no other view does.
+        powerSources = result.sources
         snapshot = current
-
-        // Charger-side sensors only exist while something is plugged in, so the
-        // service list is re-enumerated on every plug event and occasionally after.
-        if lastExternalConnected != current.externalConnected || tick % 15 == 0 {
-            sensors?.rescan()
+        if sensorServiceCount != result.serviceCount {
+            sensorServiceCount = result.serviceCount
+            collectDiagnostics()
         }
         if tick % 5 == 1 {
             devices = batteryCenter.read()
@@ -193,8 +219,28 @@ final class PowerMonitor {
 
         appendLive(current)
         updateRateEstimate(current)
+        resistance.add(current)
+        pathResistance = resistance.estimate
         updateSession(current)
         lastExternalConnected = current.externalConnected
+        onTick?(current)
+    }
+
+    /// One fresh reading for the Shortcuts action, with none of the tick's side effects.
+    ///
+    /// `refresh()` cannot be reused for this. It opens and samples charge sessions and
+    /// persists them, feeds the resistance fit, drives the live activity and the widget
+    /// through `onTick`, and republishes `snapshot`. Shortcuts wakes the app in the
+    /// background — possibly every few minutes, for an automation — and each of those
+    /// would leave a one-sample session in History. This reads and returns.
+    ///
+    /// The HID service list is re-enumerated first. The tick does that on plug events,
+    /// but the tick is paused whenever the app is in the background, which is exactly
+    /// when Shortcuts runs it: a charger plugged in since the last tick would have no
+    /// sensors in the list, and charging power would come back as no reading while the
+    /// phone was plainly charging. Enumerating is cheap; a stale list is not.
+    func readNow() async -> PowerSnapshot {
+        await probeService.readNow()
     }
 
     private func appendLive(_ snapshot: PowerSnapshot) {
@@ -254,6 +300,10 @@ final class PowerMonitor {
         if session.adapterName == nil { session.adapterName = snapshot.adapterName }
         if session.adapterRatedWatts == nil { session.adapterRatedWatts = snapshot.adapterRatedWatts }
         if thermal.state.isThrottling { session.throttledSeconds += 1 }
+        // Carried on every tick rather than at close: the fit is what History uses to
+        // compare one cable with another, and a session that ends while the app is
+        // suspended is closed from `lastConnectedObservation` without another reading.
+        session.recordPathFit(resistance.estimate)
 
         if snapshot.date.timeIntervalSince(lastSampleWrite) >= SessionStore.sampleInterval {
             lastSampleWrite = snapshot.date
@@ -308,6 +358,31 @@ final class PowerMonitor {
     func deleteSession(_ session: ChargeSession) {
         sessions.removeAll { $0.id == session.id }
         persist()
+    }
+
+    /// Every recorded session on the same adapter that produced a path-resistance
+    /// fit, including this one, lowest resistance first.
+    ///
+    /// This is the comparison the number is actually for. A path resistance on its
+    /// own is hard to judge — it carries the charger's regulation and both sets of
+    /// contacts as well as the cable — but the same charger measured through two
+    /// cables differs only by the cable and the plugs, so the difference between two
+    /// rows here is the thing a user can act on.
+    ///
+    /// Matched on the adapter's own name, which is hardware and is compared verbatim.
+    /// Wireless sessions are excluded: there is no cable in them to compare.
+    func pathFitsSharingAdapter(with session: ChargeSession) -> [ChargeSession] {
+        // This session has to be in the comparison for the comparison to be about it.
+        // Without a fit of its own it would be a list of other sessions under a
+        // heading that claims to say something about this one.
+        guard let adapter = session.adapterName, !session.isWireless,
+              session.pathMilliohms != nil else { return [] }
+        let matching = sessions.filter {
+            $0.adapterName == adapter && !$0.isWireless && $0.pathMilliohms != nil
+        }
+        // One row is not a comparison; it is the same number again.
+        guard matching.count > 1 else { return [] }
+        return matching.sorted { ($0.pathMilliohms ?? 0) < ($1.pathMilliohms ?? 0) }
     }
 
     func deleteAllSessions() {
@@ -382,8 +457,8 @@ final class PowerMonitor {
 
     private func collectDiagnostics() {
         var lines: [String] = []
-        lines.append("IOKit: \(battery == nil ? "unavailable" : "loaded")")
-        lines.append("HID sensors: \(sensors == nil ? "unavailable" : "\(sensors?.serviceCount ?? 0) services")")
+        lines.append("IOKit: \(probeService.batteryAvailable ? "loaded" : "unavailable")")
+        lines.append("HID sensors: \(probeService.hidAvailable ? "\(sensorServiceCount) services" : "unavailable")")
         lines.append("BatteryCenter: \(batteryCenter.status) via \(batteryCenter.controllerOrigin)")
         lines.append("Device: \(Self.machineIdentifier)")
         #if targetEnvironment(simulator)
@@ -399,8 +474,15 @@ final class PowerMonitor {
     var batteryCenterDiagnostic: LocalizedStringResource? { batteryCenter.status.diagnostic }
 
     /// Every HID service in the system, for the debug view.
-    func hidInventory() -> [HIDSensors.ServiceInfo] {
-        sensors?.fullInventory() ?? []
+    func hidInventory() async -> [HIDSensors.ServiceInfo] {
+        await probeService.fullInventory()
+    }
+
+    /// What the accessory-manager registry family will admit to, for the debug view.
+    /// Built on demand rather than held: it is a one-shot scan behind a button, and
+    /// nothing outside Raw data reads it. See `AccessoryProbe` for what it asks and why.
+    func accessoryProbe() -> AccessoryProbe.Report? {
+        AccessoryProbe()?.run()
     }
 
     private static let machineIdentifier: String = {

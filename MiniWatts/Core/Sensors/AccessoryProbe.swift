@@ -31,7 +31,7 @@ import Foundation
 /// registry read. A class that does not exist returns an empty iterator, which is
 /// a result and not an error — the report keeps those rows so the dump says which
 /// of macOS's USB-PD nodes iOS does not have.
-final class AccessoryProbe {
+nonisolated final class AccessoryProbe {
     // MARK: Report
 
     struct KeyReading: Identifiable, Hashable {

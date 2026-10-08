@@ -6,7 +6,7 @@ import Foundation
 /// may not exist on a re-signed sideloaded copy, and even where it does, the app is
 /// rarely running — so the extension does its own read, with the same IOKit and HID
 /// code the app uses.
-enum ReadingProbe {
+nonisolated enum ReadingProbe {
     // A process gets exactly one working HID event client: a second one reads NaN for
     // every service. The extension process can outlive a single refresh, so the client
     // is created once and kept, and every read goes through the lock.

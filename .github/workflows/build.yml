@@ -23,13 +23,16 @@ permissions:
 jobs:
   ipa:
     name: Unsigned ipa
-    # macOS 26 Tahoe ships Xcode 26.x, whose toolchain is Swift 6.2 or newer —
-    # which this project needs. `nonisolated` on type and extension declarations
-    # is a Swift 6.2 feature, so an older compiler rejects the source outright.
-    # Pinning macos-15 and then Xcode 16.2 (Swift 6.0.3) is what failed the
-    # v1.0.2, v1.0.3 and v1.0.4 tags: the build died in the widget target with
-    # "'nonisolated' modifier cannot be applied to this declaration".
-    runs-on: macos-26
+    # `macos-latest` is macOS 26 as of this writing, and its newest Xcode carries
+    # Swift 6.2 or newer, which this project needs: `nonisolated` on type and
+    # extension declarations is a Swift 6.2 feature, so an older compiler rejects
+    # the source outright.
+    #
+    # What failed the v1.0.2, v1.0.3 and v1.0.4 tags was the Xcode selection, not
+    # the image: it pinned /Applications/Xcode_16.2.app (Swift 6.0.3), and the
+    # build died with "'nonisolated' modifier cannot be applied to this
+    # declaration". The step below now takes whatever Xcode the image ships.
+    runs-on: macos-latest
     permissions:
       # Only the release step at the bottom uses this, and only on a tag.
       contents: write

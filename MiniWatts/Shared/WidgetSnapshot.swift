@@ -10,7 +10,7 @@ import Foundation
 /// The container may not exist at all. An App Group entitlement survives a signed
 /// build from Xcode, but re-signing tools vary in whether they carry it over, so on
 /// a sideloaded copy `containerURL` can be nil. Every caller treats that as normal.
-struct WidgetSnapshot: Codable, Hashable {
+nonisolated struct WidgetSnapshot: Codable, Hashable {
     /// A finished charge, reduced to what fits on a widget.
     struct Session: Codable, Hashable {
         var start: Date

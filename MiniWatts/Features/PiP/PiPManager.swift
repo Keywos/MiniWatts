@@ -5,7 +5,7 @@ import SwiftUI
 /// 驱动画中画（Picture in Picture）窗口并在其中以自绘画面实时显示各项功耗与温度指标
 @MainActor
 @Observable
-final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
+final class PiPManager {
     static let shared = PiPManager()
 
     var isActive: Bool { isPiPActive }
@@ -20,7 +20,16 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     private var pipController: AVPictureInPictureController?
     private var displayLayer: AVSampleBufferDisplayLayer?
     private var pipSourceView: UIView?
-    private var timer: Timer?
+    /// AVKit's delegate protocols are not main-actor annotated, so this project's
+    /// (main-actor by default) methods cannot witness them. A separate object holds
+    /// that conformance and forwards to the manager — see `Proxy`.
+    private var proxy: Proxy?
+    /// The window's refresh and the wait for the layer to become drawable are tasks
+    /// rather than `Timer`s: a timer's closure is `@Sendable`, so under
+    /// main-actor-by-default isolation it could not call a method here without an
+    /// actor hop.
+    private var frameTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
     private weak var monitor: PowerMonitor?
 
     // private let canvasSize = CGSize(width: 640, height: 360)
@@ -28,8 +37,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     private let canvasSize = CGSize(width: 640, height: 240)
     private let outputSize = CGSize(width: 1280, height: 480)
 
-    override private init() {
-        super.init()
+    private init() {
     }
 
     /// 配置背景播放音频 session，使画中画在后台和退出 app 时能持续运行
@@ -94,13 +102,16 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
         self.displayLayer = layer
 
+        let proxy = Proxy(owner: self)
+        self.proxy = proxy
+
         let contentSource = AVPictureInPictureController.ContentSource(
             sampleBufferDisplayLayer: layer,
-            playbackDelegate: self
+            playbackDelegate: proxy
         )
 
         let controller = AVPictureInPictureController(contentSource: contentSource)
-        controller.delegate = self
+        controller.delegate = proxy
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.requiresLinearPlayback = true
         self.pipController = controller
@@ -125,7 +136,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         guard !controller.isPictureInPictureActive else { return }
 
         configureAudioSession()
-        startFrameTimer()
+        startFrameLoop()
 
         // 检查系统当前是否允许开启画中画
         if controller.isPictureInPicturePossible {
@@ -133,18 +144,18 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         } else {
             // 如果图层尚未就绪，重试启动（最多等待 1.5 秒）
             print("[PiPManager] isPictureInPicturePossible is false, waiting...")
-            var retries = 0
-            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] t in
-                guard let self else { t.invalidate(); return }
-                retries += 1
-                if controller.isPictureInPicturePossible {
-                    t.invalidate()
-                    controller.startPictureInPicture()
-                    print("[PiPManager] Started PiP after retry \(retries)")
-                } else if retries >= 15 {
-                    t.invalidate()
-                    print("[PiPManager] Failed to start PiP: isPictureInPicturePossible remained false")
+            retryTask?.cancel()
+            retryTask = Task {
+                for attempt in 0..<15 {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    if Task.isCancelled { return }
+                    if controller.isPictureInPicturePossible {
+                        controller.startPictureInPicture()
+                        print("[PiPManager] Started PiP after retry \(attempt + 1)")
+                        return
+                    }
                 }
+                print("[PiPManager] Failed to start PiP: isPictureInPicturePossible remained false")
             }
         }
     }
@@ -156,21 +167,24 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
 
     // MARK: - Frame Rendering
 
-    private func startFrameTimer() {
-        stopFrameTimer()
+    private func startFrameLoop() {
+        stopFrameLoop()
         // 首次立即渲染一帧
         renderCurrentSnapshot()
-        // 维持约每秒刷新画面（与采样周期 1s 匹配）
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+        // 维持约每秒刷新画面(与采样周期 1s 匹配)
+        frameTask?.cancel()
+        frameTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
                 self?.renderCurrentSnapshot()
             }
         }
     }
 
-    private func stopFrameTimer() {
-        timer?.invalidate()
-        timer = nil
+    private func stopFrameLoop() {
+        frameTask?.cancel()
+        frameTask = nil
     }
 
     private func renderCurrentSnapshot() {
@@ -488,70 +502,99 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
         return buffer
     }
 
+    // MARK: - Delegate callbacks
+
+    /// Called by `Proxy`, on the main thread.
+    fileprivate func didStart() {
+        isPiPActive = true
+        startFrameLoop()
+    }
+
+    /// Called by `Proxy`, on the main thread.
+    fileprivate func didStop() {
+        isPiPActive = false
+        stopFrameLoop()
+    }
+
+    /// Called by `Proxy`, on the main thread.
+    fileprivate func didFail(_ error: any Error) {
+        print("[PiPManager] PiP failed to start: \(error)")
+        isPiPActive = false
+        stopFrameLoop()
+    }
+
     // MARK: - AVPictureInPictureControllerDelegate
 
-    func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPiPActive = true
-        startFrameTimer()
-    }
+    /// AVKit's callbacks are not main-actor annotated, so they cannot be witnessed
+    /// by this project's (main-actor by default) methods. They do arrive on the main
+    /// thread, hence `assumeIsolated` rather than a hop, which would report a
+    /// stopped window a frame late.
+    ///
+    /// One `AVSampleBufferDisplayLayer` and one controller per process: MiniWatts is
+    /// too small to need a second one.
+    private final class Proxy: NSObject, AVPictureInPictureControllerDelegate,
+                               AVPictureInPictureSampleBufferPlaybackDelegate {
+        private weak var owner: PiPManager?
 
-    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPiPActive = true
-    }
+        init(owner: PiPManager) {
+            self.owner = owner
+        }
 
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        failedToStartPictureInPictureWithError error: Error
-    ) {
-        isPiPActive = false
-        stopFrameTimer()
-    }
+        nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
+            MainActor.assumeIsolated { owner?.didStart() }
+        }
 
-    func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPiPActive = false
-        stopFrameTimer()
-    }
+        nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+            MainActor.assumeIsolated { owner?.didStart() }
+        }
 
-    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPiPActive = false
-        stopFrameTimer()
-    }
-}
+        nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                                    failedToStartPictureInPictureWithError error: any Error) {
+            MainActor.assumeIsolated { owner?.didFail(error) }
+        }
 
-// MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
+        nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ controller: AVPictureInPictureController) {
+            MainActor.assumeIsolated { owner?.didStop() }
+        }
 
-extension PiPManager: AVPictureInPictureSampleBufferPlaybackDelegate {
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        setPlaying playing: Bool
-    ) {
-        // 画中画窗口上的播放/暂停按钮
-    }
+        nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+            MainActor.assumeIsolated { owner?.didStop() }
+        }
 
-    func pictureInPictureControllerTimeRangeForPlayback(
-        _ pictureInPictureController: AVPictureInPictureController
-    ) -> CMTimeRange {
-        // 实时流返回无限或当前时刻
-        CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
-    }
+        /// Tapping the window's restore button brings MiniWatts back. There is no
+        /// player UI to put back together, so the window just closes.
+        nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                                    restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+            completionHandler(true)
+        }
 
-    func pictureInPictureControllerIsPlaybackPaused(
-        _ pictureInPictureController: AVPictureInPictureController
-    ) -> Bool {
-        false
-    }
+        // MARK: AVPictureInPictureSampleBufferPlaybackDelegate
 
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        didTransitionToRenderSize newRenderSize: CMVideoDimensions
-    ) {
-    }
+        // The window is a readout, not a player: it is always live, never paused, and
+        // there is nothing to seek.
+        nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                                    setPlaying playing: Bool) {}
 
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        skipByInterval skipInterval: CMTime,
-        completion handler: @escaping () -> Void
-    ) {
-        handler()
+        nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ controller: AVPictureInPictureController) -> CMTimeRange {
+            CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
+        }
+
+        nonisolated func pictureInPictureControllerIsPlaybackPaused(_ controller: AVPictureInPictureController) -> Bool {
+            false
+        }
+
+        nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                                    didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
+
+        nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                                    skipByInterval skipInterval: CMTime,
+                                                    completion completionHandler: @escaping () -> Void) {
+            completionHandler()
+        }
+
+        /// No sound of ours to protect, and silencing another app's would be rude.
+        nonisolated func pictureInPictureControllerShouldProhibitBackgroundAudioPlayback(_ controller: AVPictureInPictureController) -> Bool {
+            false
+        }
     }
 }

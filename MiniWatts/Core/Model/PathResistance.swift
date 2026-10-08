@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the fit concluded about the charging path, and how much of it to believe.
-struct PathResistanceEstimate: Hashable {
+nonisolated struct PathResistanceEstimate: Hashable {
     /// Resistance of the whole path in milliohms: the charger's own output
     /// impedance, the cable's VBUS and ground conductors, both sets of contacts,
     /// and the phone's board up to the sensor. Not the cable alone — nothing here
@@ -62,7 +62,7 @@ struct PathResistanceEstimate: Hashable {
 ///
 /// Wireless is excluded outright: there is no coil-current sensor on the models
 /// checked, and a coil gap is not a cable.
-final class PathResistanceMeter {
+nonisolated final class PathResistanceMeter {
     /// What identifies one charging path. Anything that changes here invalidates
     /// every sample taken before it.
     struct Fingerprint: Hashable {

@@ -21,14 +21,14 @@ import Foundation
 ///   Charger TQ0j / TQ0d    charger junction / die temperature
 ///   PMU tdie1…n            SoC die temperatures
 nonisolated final class HIDSensors {
-    enum Kind: Int {
+    enum Kind: Int, Sendable {
         case current = 2
         case voltage = 3
         case temperature = 5
         case other = 0
     }
 
-    struct Reading: Identifiable, Hashable {
+    struct Reading: Identifiable, Hashable, Sendable {
         let name: String
         let kind: Kind
         let value: Double
@@ -49,7 +49,7 @@ nonisolated final class HIDSensors {
     }
 
     /// One HID service as the system reports it, before any value is read.
-    struct ServiceInfo: Identifiable, Hashable {
+    struct ServiceInfo: Identifiable, Hashable, Sendable {
         let name: String
         let usagePage: Int
         let usage: Int
@@ -126,6 +126,10 @@ nonisolated final class HIDSensors {
 
     /// Current value of every discovered sensor. Sensors that return NaN (nothing
     /// plugged in, rail powered down) are skipped rather than shown as zero.
+    ///
+    /// Nothing else is filtered here: the Raw data screen shows this list and says it
+    /// is unedited. Values that cannot be temperatures are dropped a layer up, where
+    /// `PowerSnapshot` decides what counts as one — see `plausibleCelsius`.
     func read() -> [Reading] {
         services.enumerated().compactMap { index, service in
             guard let event = copyEvent(service.ref, service.eventType, 0, 0)?.takeRetainedValue() else { return nil }
@@ -137,6 +141,20 @@ nonisolated final class HIDSensors {
                            index: index)
         }
     }
+
+    /// What a temperature sensor on a phone can physically report.
+    ///
+    /// NaN is not the only way a sensor says "nothing here". Reports from models this
+    /// app has never run on include a charge IC reading −9199.4 °C, which is a
+    /// sentinel or a raw counter that happens to sit on the temperature page — and the
+    /// app dutifully printed it as a temperature. A reading outside this range is not
+    /// a cold phone, it is a sensor that does not mean what its usage page says, so it
+    /// is dropped and the value shows as absent.
+    ///
+    /// Only temperature is checked. Volts and amps have shown no comparable sentinel,
+    /// and a range tight enough to catch one would risk hiding a real rail on a model
+    /// nobody here has seen.
+    static let plausibleCelsius = -40.0...150.0
 
     /// Every HID service in the system, matched or not. Debug view only: this is how
     /// the sensor names above were found in the first place, and how they get found

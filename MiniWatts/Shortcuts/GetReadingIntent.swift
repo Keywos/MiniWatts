@@ -19,9 +19,9 @@ import Foundation
 ///   intent that created its own would return no temperature while the app was open.
 ///   `@Dependency` hands it the one `MiniWattsApp.init` registered.
 struct GetReadingIntent: AppIntent {
-    static var title: LocalizedStringResource { "Get Reading" }
+    nonisolated static var title: LocalizedStringResource { "Get Reading" }
 
-    static var description: IntentDescription? {
+    nonisolated static var description: IntentDescription? {
         IntentDescription("Reads one value from the phone's sensors at the moment the action runs. When a sensor does not answer, the action returns no value — never 0, and never an older reading — so a shortcut can tell the difference.")
     }
 
@@ -31,7 +31,7 @@ struct GetReadingIntent: AppIntent {
     @Parameter(title: "Unit", default: .celsius)
     var unit: TemperatureUnit
 
-    static var parameterSummary: some ParameterSummary {
+    nonisolated static var parameterSummary: some ParameterSummary {
         // The unit only means something for the three temperatures, so it is only
         // offered for them.
         When(\.$metric, .oneOf, [.batteryTemperature, .socTemperature, .hottestTemperature]) {
@@ -43,7 +43,7 @@ struct GetReadingIntent: AppIntent {
 
     @Dependency private var monitor: PowerMonitor
 
-    func perform() async throws -> some IntentResult & ReturnsValue<Double?> {
+    nonisolated func perform() async throws -> some IntentResult & ReturnsValue<Double?> {
         let monitor = monitor
         let metric = metric
         let unit = unit
@@ -59,7 +59,7 @@ struct GetReadingIntent: AppIntent {
 /// same names and taken from the same snapshot fields — so "SoC temperature" in a
 /// shortcut is the number the Dynamic Island shows — plus the charge level, which an
 /// automation wants and the live activity has no need to be told.
-enum ReadingMetric: String, AppEnum {
+nonisolated enum ReadingMetric: String, AppEnum {
     case batteryTemperature
     case socTemperature
     case hottestTemperature
@@ -127,7 +127,7 @@ enum ReadingMetric: String, AppEnum {
     }
 }
 
-enum TemperatureUnit: String, AppEnum {
+nonisolated enum TemperatureUnit: String, AppEnum {
     case celsius
     case fahrenheit
 
