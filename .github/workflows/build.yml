@@ -23,7 +23,7 @@ permissions:
 jobs:
   ipa:
     name: Unsigned ipa
-    runs-on: macos-latest
+    runs-on: macos-15
     permissions:
       # Only the release step at the bottom uses this, and only on a tag.
       contents: write
@@ -48,7 +48,7 @@ jobs:
       # compile with errors that do not name the real cause. Say it up front.
       - name: Check toolchain
         run: |
-          required=6.2
+          required=6.0
           found=$(swift -version 2>&1 | sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -1)
           echo "Swift $found (need $required or newer)"
           if [ "$(printf '%s\n%s\n' "$required" "$found" | sort -V | head -1)" != "$required" ]; then
