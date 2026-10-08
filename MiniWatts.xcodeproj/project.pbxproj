@@ -6,25 +6,89 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7BC8FC4E3053B50B0081E0FD /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC8FC4D3053B50B0081E0FD /* WidgetKit.framework */; };
+		7BC8FC503053B50B0081E0FD /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC8FC4F3053B50B0081E0FD /* SwiftUI.framework */; };
+		7BC8FC613053B50E0081E0FD /* WidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7BC8FC4B3053B50B0081E0FD /* WidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7BC8FC5F3053B50E0081E0FD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7BD6BADB3051337000B3648E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7BC8FC4A3053B50B0081E0FD;
+			remoteInfo = WidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7BC8FC623053B50E0081E0FD /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7BC8FC613053B50E0081E0FD /* WidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		7BC8FC4B3053B50B0081E0FD /* WidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7BC8FC4D3053B50B0081E0FD /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		7BC8FC4F3053B50B0081E0FD /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		7BD6BAE33051337000B3648E /* MiniWatts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiniWatts.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EA9865233054BD0E00BC4FBD /* Exceptions for "MiniWatts" folder in "MiniWatts" target */ = {
+		7BC8FC653053B50E0081E0FD /* Exceptions for "Widget" folder in "WidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7BC8FC4A3053B50B0081E0FD /* WidgetExtension */;
+		};
+		E03CF1CA10266219FC3F80A0 /* Exceptions for "MiniWatts" folder in "MiniWatts" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 7BD6BAE23051337000B3648E /* MiniWatts */;
 		};
+		E03CF1C910266219FC3F809F /* Exceptions for "MiniWatts" folder in "WidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Core/Model/Formatting.swift,
+				Core/Model/PowerSnapshot.swift,
+				Core/Sensors/HIDSensors.swift,
+				Core/Sensors/IOKitBattery.swift,
+				Core/Sensors/SensorCatalog.swift,
+				Shared/ChargeActivityAttributes.swift,
+				Shared/ChargeReading.swift,
+				Shared/ReadingWording.swift,
+				Shared/WidgetSnapshot.swift,
+			);
+			target = 7BC8FC4A3053B50B0081E0FD /* WidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		7BC8FC513053B50B0081E0FD /* Widget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7BC8FC653053B50E0081E0FD /* Exceptions for "Widget" folder in "WidgetExtension" target */,
+			);
+			path = Widget;
+			sourceTree = "<group>";
+		};
 		7BD6BAE53051337000B3648E /* MiniWatts */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				EA9865233054BD0E00BC4FBD /* Exceptions for "MiniWatts" folder in "MiniWatts" target */,
+				E03CF1CA10266219FC3F80A0 /* Exceptions for "MiniWatts" folder in "MiniWatts" target */,
+				E03CF1C910266219FC3F809F /* Exceptions for "MiniWatts" folder in "WidgetExtension" target */,
 			);
 			path = MiniWatts;
 			sourceTree = "<group>";
@@ -32,6 +96,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		7BC8FC483053B50B0081E0FD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BC8FC503053B50B0081E0FD /* SwiftUI.framework in Frameworks */,
+				7BC8FC4E3053B50B0081E0FD /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7BD6BAE03051337000B3648E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -42,10 +115,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7BC8FC4C3053B50B0081E0FD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7BC8FC4D3053B50B0081E0FD /* WidgetKit.framework */,
+				7BC8FC4F3053B50B0081E0FD /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		7BD6BADA3051337000B3648E = {
 			isa = PBXGroup;
 			children = (
 				7BD6BAE53051337000B3648E /* MiniWatts */,
+				7BC8FC513053B50B0081E0FD /* Widget */,
+				7BC8FC4C3053B50B0081E0FD /* Frameworks */,
 				7BD6BAE43051337000B3648E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +138,7 @@
 			isa = PBXGroup;
 			children = (
 				7BD6BAE33051337000B3648E /* MiniWatts.app */,
+				7BC8FC4B3053B50B0081E0FD /* WidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -61,6 +146,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		7BC8FC4A3053B50B0081E0FD /* WidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7BC8FC663053B50E0081E0FD /* Build configuration list for PBXNativeTarget "WidgetExtension" */;
+			buildPhases = (
+				7BC8FC473053B50B0081E0FD /* Sources */,
+				7BC8FC483053B50B0081E0FD /* Frameworks */,
+				7BC8FC493053B50B0081E0FD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7BC8FC513053B50B0081E0FD /* Widget */,
+			);
+			name = WidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = WidgetExtension;
+			productReference = 7BC8FC4B3053B50B0081E0FD /* WidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		7BD6BAE23051337000B3648E /* MiniWatts */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 7BD6BAEE3051337200B3648E /* Build configuration list for PBXNativeTarget "MiniWatts" */;
@@ -68,10 +175,12 @@
 				7BD6BADF3051337000B3648E /* Sources */,
 				7BD6BAE03051337000B3648E /* Frameworks */,
 				7BD6BAE13051337000B3648E /* Resources */,
+				7BC8FC623053B50E0081E0FD /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7BC8FC603053B50E0081E0FD /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7BD6BAE53051337000B3648E /* MiniWatts */,
@@ -91,6 +200,9 @@
 				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					7BC8FC4A3053B50B0081E0FD = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					7BD6BAE23051337000B3648E = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -112,11 +224,19 @@
 			projectRoot = "";
 			targets = (
 				7BD6BAE23051337000B3648E /* MiniWatts */,
+				7BC8FC4A3053B50B0081E0FD /* WidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		7BC8FC493053B50B0081E0FD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7BD6BAE13051337000B3648E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -127,6 +247,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		7BC8FC473053B50B0081E0FD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7BD6BADF3051337000B3648E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -136,7 +263,79 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		7BC8FC603053B50E0081E0FD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7BC8FC4A3053B50B0081E0FD /* WidgetExtension */;
+			targetProxy = 7BC8FC5F3053B50E0081E0FD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		7BC8FC633053B50E0081E0FD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = Widget/Widget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Widget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MiniWatts;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.zhaohe.MiniWatts.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7BC8FC643053B50E0081E0FD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = Widget/Widget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Widget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MiniWatts;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.zhaohe.MiniWatts.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 		7BD6BAEC3051337200B3648E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -265,16 +464,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MiniWatts/MiniWatts.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 29Q6MU37UW;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MiniWatts/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "ZhaoHe Studio";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -282,7 +482,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.zhaohe.MiniWattsl;
+				PRODUCT_BUNDLE_IDENTIFIER = org.zhaohe.MiniWatts;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -299,16 +499,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MiniWatts/MiniWatts.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 29Q6MU37UW;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MiniWatts/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "ZhaoHe Studio";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -316,7 +517,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.zhaohe.MiniWattsl;
+				PRODUCT_BUNDLE_IDENTIFIER = org.zhaohe.MiniWatts;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -331,6 +532,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		7BC8FC663053B50E0081E0FD /* Build configuration list for PBXNativeTarget "WidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7BC8FC633053B50E0081E0FD /* Debug */,
+				7BC8FC643053B50E0081E0FD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		7BD6BADE3051337000B3648E /* Build configuration list for PBXProject "MiniWatts" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

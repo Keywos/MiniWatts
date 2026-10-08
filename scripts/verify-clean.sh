@@ -28,9 +28,11 @@ check() { # description, 0 = clean
 
 echo "Checking $(basename "$IPA")"
 
-[ -e "$APP/_CodeSignature" ] && r=1 || r=0
+# Searched for at any depth, not just at the top of the app: an app extension is a
+# bundle of its own, and carries its own signature and profile.
+[ -n "$(find "$APP" -name _CodeSignature -print -quit)" ] && r=1 || r=0
 check "no code signature" $r
-[ -e "$APP/embedded.mobileprovision" ] && r=1 || r=0
+[ -n "$(find "$APP" -name embedded.mobileprovision -print -quit)" ] && r=1 || r=0
 check "no provisioning profile" $r
 
 # A home directory in any file means a build path survived.
@@ -50,6 +52,7 @@ check "no team identifier" $r
 
 echo "  info  bundle id: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || echo '?')"
 echo "  info  version:   $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" 2>/dev/null || echo '?')"
+echo "  info  extensions: $(find "$APP" -name '*.appex' -type d | wc -l | tr -d ' ')"
 
 [ "$fail" -eq 0 ] || { echo; echo "This build carries identifying data — do not publish it." >&2; exit 1; }
 echo

@@ -22,16 +22,22 @@ by several entries.
 - `TEAM_ID=… ./scripts/build-ipa.sh signed` — for your own device. No default team
   lives in this repo; `DEVELOPMENT_TEAM` is empty in the pbxproj and Xcode will
   write yours back into it if you pick one in the UI. Do not commit that.
-- `.github/workflows/build.yml` builds, verifies and (on a `v*` tag) releases.
+- `.github/workflows/build.yml` builds, verifies and (on a `v*` tag) releases. CI pins an
+  older Xcode than a development Mac usually runs, and the two compilers disagree:
+  v1.3.0's first tag failed on a Swift 6 sending error that Xcode 27 accepted and CI's
+  Xcode 26.6 did not. A clean local `build-ipa.sh` is not enough — run the workflow by
+  hand (`gh workflow run build.yml --ref master`) and tag only once it is green.
 - The simulator reads the **Mac's** battery through IOKit and has no HID sensors:
   fine for layout and for the adapter/PD panels, useless for anything sensor-driven.
 
 ## Layout
 
 - `Core/Sensors/` — the probes. `IOKitBattery` (dlsym'd IOKit + powerd), `HIDSensors`
-  (`IOHIDEventSystemClient`, one client per process, created once), `BatteryCenterBridge`,
-  `ThermalMonitor` (`ProcessInfo.thermalState`, public API), `SensorCatalog`
-  (name → zone/label by whole-word keyword, never exact).
+  (`IOHIDEventSystemClient`, one client per process, created once), `SensorProbe` (the
+  actor that owns both and does every read off the main actor: the tick, the Shortcuts
+  action and Raw data's inventory all queue on it, so the one HID client is never used
+  twice at once), `BatteryCenterBridge`, `ThermalMonitor` (`ProcessInfo.thermalState`,
+  public API), `SensorCatalog` (name → zone/label by whole-word keyword, never exact).
 - `Core/Model/` — `PowerSnapshot` merges all four sources and owns every derived value.
   Anything derived from the HID readings is resolved **once, in `init`, and stored** —
   it used to be computed per access, which meant a body asking for the battery
@@ -46,8 +52,18 @@ by several entries.
   estimate, which is derived across several snapshots and so is not a snapshot's to give.
 - `Design/` — palette (`Color.mw(light:dark:)`, no asset catalog entries), `Panel`/
   `Metric`/`Pill`/`BarRow`, `PowerRing`, Swift Charts wrappers, `PhoneHeatMap`.
-- `Features/` — one folder per tab, plus Settings. `DebugView` (Raw data) is
-  `#if DEBUG` only and reached from the bottom of Settings, not the main toolbar.
+- `Features/` — one folder per tab, plus Settings. `DebugView` (Raw data) is reached
+  from the bottom of Settings, not the main toolbar. It ships in release builds: its
+  probes answer questions only hardware this project does not have can answer, and
+  those answers arrive as dumps from people running the release. Nothing it reads may
+  be gated on `#if DEBUG` — `PowerMonitor.powerSources` was, and its panel reported no
+  power sources in every release build.
+- `Shared/` — the four files compiled into both targets: `ChargeReading`,
+  `ChargeActivityAttributes`, `WidgetSnapshot`, `ReadingWording`. `Widgets/` — the app
+  side of the widget and the live activity (`WidgetPublisher`, `ChargeActivityController`),
+  driven from the tick. `Floating/` — the Picture in Picture readout; see *The floating
+  meter*. `Shortcuts/` — the Shortcuts action; see *Shortcuts*. `Widget/`, at the top
+  level, is the extension itself; see *Widgets and Live Activity*.
 
 ## Swift 6 isolation
 
@@ -83,8 +99,9 @@ foreground. Three things make that work and they are easy to undo by accident:
   session across however long the app was away.
 - Settings has *keep the screen on while charging*, default on, applied in `RootView`
   (`isIdleTimerDisabled`) and gated on the phone being plugged in. Sensors can only be
-  read in the foreground, so without it the screen locks and a full charge can never be
-  recorded. UIKit stays in the view layer; `Core` only holds the preference.
+  read while the app runs, so without it the screen locks and a full charge can never be
+  recorded. UIKit stays in the view layer; `Core` only holds the preference. The other
+  way to keep the tick alive is the floating meter, which runs through a locked screen.
 
 `SessionStore` encodes and writes on its own serial queue, coalescing bursts, and the
 load in `PowerMonitor.init` is a `Task`. At the ceiling — 60 sessions × 1,500 samples —
@@ -129,6 +146,46 @@ Watch for: `String(format:)` still hardcodes the decimal separator, and
 `IOPSCopyBatteryLevelLimits`, `IOPSCopyPowerSourcesInfoPrecise` (all
 `kIOReturnNotPrivileged`); PowerUI XPC (Optimized Charging, charge limit); powerd
 `Time to Empty` (always 0).
+
+**Nothing about the charger's identity, and nothing about the cable.** Raw data has
+a probe button for this (`AccessoryProbe`); re-run it on a new iOS rather than
+deriving any of it again. On iOS 27 / iPhone18,4:
+
+- **The registry nodes are all there.** `IOServiceMatching("IOAccessoryManager")`
+  matches `IOAccessoryDock0PinBuiltin · Port-MagSafe` and
+  `AppleHPMInterfaceType15 · Port-USB-C`; `IOAccessoryPort` matches
+  `IOAccessoryPortUSB`; `IOPortTransportStateCC · CC` and
+  `IOPortTransportComponentCCUSBPDSOP · SOP` both exist. This is the same driver
+  family WhatCable reads on macOS, under slightly different type numbers.
+- **Every property is filtered away.** `IORegistryEntryCreateCFProperties`
+  *succeeds* — no `kIOReturn` at all — and returns `IOClass` alone on the three
+  `IOAccessory*` nodes and an empty dictionary on the two transport nodes. All 39
+  targeted per-key reads on all five services returned nothing: the whole
+  `IOAccessoryUSB*` family (connect type, charging voltage, current limit),
+  `IOAccessoryAccessoryManufacturer`/`Name`/`ModelNumber`/`SerialNumber`, the power
+  modes, `IOAccessoryDigitalID`, and `Metadata` / `Vendor ID (SOP1)` /
+  `Product ID (SOP1)` on the transport nodes.
+- **`libIOAccessoryManager.dylib` loads and still exports all sixteen getters**, and
+  they are useless anyway. Disassembling it shows they are built on exactly the two
+  calls above: `IOAccessoryManagerGetUSBChargingVoltage` is one
+  `IORegistryEntryCreateCFProperty("IOAccessoryUSBChargingVoltage")` plus
+  `CFNumberGetValue`, and `IOAccessoryManagerGetUSBConnectType` is one
+  `IORegistryEntryCreateCFProperties` plus two dictionary lookups. They can only
+  return the same nothing, so do not go guessing their signatures.
+- `IOPortFeaturePowerSource`, where macOS keeps the PDO list, does not exist on iOS.
+  The profile menu arrives through `IOPSCopyExternalPowerAdapterDetails` instead.
+
+**The cable's e-marker is not hidden — it is never read.**
+`IOPortTransportComponentCCUSBPDSOPp` matches **no service**, while `…SOP` matches
+one. SOP is the port partner, which is the charger; SOP′ is the cable. Only the port
+that sources VCONN can talk to a cable plug, and while charging the phone is the
+sink — the charger is the one that reads the cable, and it trims the `UsbHvcMenu` it
+advertises to what the cable supports. macOS creates the SOP′ node only when it
+needs the cable's rating (above 3 A, or Thunderbolt), so on a Mac charging over a
+plain USB-C cable that node is absent too. Nothing about cable identity is reachable
+on a phone at any privilege level, because the conversation does not happen there.
+What is left is the cable's *effect*: the advertised menu against the charger's
+rating, and the port voltage against the current through it — see `PathResistanceMeter`.
 
 **Accessory battery levels are gone.** `BatteryCenter.framework` still loads from a
 normal sandbox and `BCBatteryDeviceController` still exists, but:
@@ -175,20 +232,239 @@ against a pack energy the user sets in Settings.
   maximum; `readings` keeps everything, with constants sorted last.
 - Four separate sensors are all named `gas gauge battery`. `HIDSensors.Reading.id`
   therefore includes the service index — name alone gave `ForEach` duplicate ids.
-- `Charger QQ0u` (usage 2) and `Charger WQ0u` (usage 3) are **unidentified**. They sit
+- `Charger QQ0u` (usage 2) and `Charger WQ0u` (usage 3) look like **accumulators**,
+  not readings, and stay out of every derived value until that is settled. They sit
   on the USB-C port, so they cannot be the wireless input; and `WQ0u` is not
-  instantaneous power (it read 0.726 while `VQ0u × IQ0u` was 3.91 W). `ALS` has the
-  same `Q`/`W` pair, so the letters are a general convention, not charger-specific.
-  They stay out of every derived value.
+  instantaneous power (it read 0.726 while `VQ0u × IQ0u` was 3.91 W). Two samples ten
+  minutes apart on one connection had both rising monotonically — `QQ0u` 0.817 →
+  1.495, `WQ0u` 3.629 → 6.530 — with ΔW/ΔQ = 4.28 against a `VQ0u` of 4.23–4.27 V.
+  That ratio is dimensionally volts and lands on the measured rail, which reads as
+  Q for charge and W for energy, the physics symbols; it would also explain why `ALS`
+  carries the same pair, the convention being general rather than charger-specific.
+  Not settled: the units are unknown, the two samples may straddle a replug, and the
+  first guess — that Q and W were `I` and `V` scaled by one common factor — was
+  falsified by the second sample, the ratios having matched to four digits once and
+  then differed by 2.4%. To pin it: sample repeatedly *without* unplugging, check
+  ΔQ/Δt against `IQ0u`, and check whether both reset on unplug.
 - Enumerating **all** HID services needs `IOHIDEventSystemClientSetMatching(client, NULL)`.
   An empty matching dictionary matches nothing, which made the debug button look dead.
 - `PMU tdie14`–`tdie17` appear in the service list but return NaN; they are skipped.
+- **NaN is not the only "nothing here".** Users on other models reported a charge IC at
+  −9199.4 °C, and the app drew it on the heat map as a temperature.
+  `HIDSensors.plausibleCelsius` (−40…150) is applied where `PowerSnapshot` decides what
+  counts as a temperature, not in `read()` — the reading stays in `sensors`, which Raw
+  data shows unedited, and never reaches a zone, the heat map or a widget.
+  `registryTemperature` goes through the same check, since its ÷100 scaling is only
+  known to hold on the models checked here.
+  Only temperature is filtered — volts and amps have shown no comparable sentinel, and
+  a range tight enough to catch one would risk hiding a real rail on an unseen model.
+  This catches impossible values, not merely wrong ones: Settings → About and the
+  Thermal page both say which model the build was verified on, because a mis-scaled
+  reading that still looks plausible cannot be caught in code.
+
+## Widgets and Live Activity
+
+The `WidgetExtension` target lives in `Widget/`: one Home Screen and Lock Screen widget
+(`BatteryWidget`) and the charging live activity (`ChargeLiveActivity`). Swift 6 like the
+app, but **without** `SWIFT_DEFAULT_ACTOR_ISOLATION`: WidgetKit's providers are
+nonisolated, and the extension has no main-actor state to protect.
+
+**Shared code is listed in the pbxproj, not kept in a folder.** The extension compiles
+eight files from `MiniWatts/` — the sensor readers, `PowerSnapshot` and what it depends
+on, and the three files in `MiniWatts/Shared/`. They are named in a
+`PBXFileSystemSynchronizedBuildFileExceptionSet` on the `MiniWatts` folder with
+`target = WidgetExtension`. For a folder that *is* synchronised into a target an exception
+set removes files; for one that is not, it adds them — confirmed by the extension's build,
+which compiles exactly those eight and nothing else from the app. A new file the widget
+needs has to be added there, or ticked under Target Membership in Xcode, which writes the
+same entry. Keep shared files free of UI and of the app-only model: the initialiser that
+turns a `ChargeSession` into a `WidgetSnapshot.Session` lives in `MiniWatts/Widgets/` for
+exactly that reason.
+
+**The extension reads the sensors itself.** `ReadingProbe` runs the app's IOKit and HID code
+at every timeline refresh. It keeps a single `HIDSensors` for the life of the process: a
+second client in one process reads NaN, and the extension's process can outlive a refresh.
+The App Group file the app writes (`WidgetSnapshot`, `group.org.zhaohe.MiniWatts`) is a
+fallback plus the last finished charge, and may not exist at all — re-signing tools differ
+on whether they carry an App Group entitlement over, and AltStore only grants custom
+entitlements to a handful of apps. Everything that reads it treats `nil` as normal.
+
+Not verified on a device when this was written: that `IOHIDEventSystemClient` answers inside
+the widget extension's sandbox, and whether the App Group survives Sideloadly, AltStore and
+SideStore. A widget that shows the level but never watts means the first did not.
+
+**Refresh is iOS's call.** A timeline asks to be refreshed after 5 minutes when plugged in
+and 30 on battery; iOS fits that to a budget of roughly one refresh every 15–60 minutes. The
+app calls `WidgetCenter.reloadAllTimelines()` on plugging in, unplugging and a finished
+session — requests made by the foreground app do not count against the budget. Every widget
+says when its numbers were taken, and whether the extension read them or the app did.
+
+**The live activity is driven by the app alone.** No push updates: those need an APNs server
+and a certificate tied to a developer team, and a re-signed copy could never receive them.
+So `ChargeActivityController` starts an activity only while the app is in front; sends an
+update at most every 5 s and at least every 20 s; gives each update a stale date 45 s out, so
+a suspended app's last reading is shown as paused rather than as current; ends the activity
+two minutes after unplugging, or at once if the setting is turned off; and adopts an activity
+left over from a killed run instead of starting a second one. All of that needs the app to be
+running: unplug while it is suspended, or kill it, and the activity stays up — paused — until
+the app runs again. The End button on the activity is the way out: `EndChargeActivityIntent`
+is a `LiveActivityIntent`, which iOS performs in the app's process, waking it if needed. It
+lives in `ChargeActivityAttributes.swift` because the extension needs the type to draw the
+button and that file is already compiled into both targets. Checked on a device: ended with
+End while still charging, the activity does not come back when the app is next opened, and
+that is accepted as it is. Unplug while the app is suspended and the island greys out and the
+Lock Screen says paused, for as long as the app stays suspended; the next time it runs, the
+island clears at once and the Lock Screen keeps the final state for two more minutes — the
+rule for an ended activity with an `.after` dismissal. `Activity` is not `Sendable`, so
+tasks are handed the activity's id and look it up — holding the instance across a `Task` does
+not compile under Swift 6. `NSSupportsLiveActivities` is set through `INFOPLIST_KEY_*` on the
+app target, like every other Info.plist key.
+
+Its compact presentation can show charging power, SoC temperature, battery temperature or
+the hottest sensor, selected in Settings. The expanded and Lock Screen presentations show
+that reading large with a caption, the other three on one line beneath it, the charge level
+bar and the status / "Since …" footnote. **Height is the constraint:** the Lock Screen gives
+an activity about 160 pt, and a first version that stacked each reading as icon, label and
+value three lines high came to about 195 pt — the system clipped its top and bottom, ate the
+padding, and shrank each cell's text by a different factor.
+
+**The widget has its own palette and its own string catalog.** It does not compile
+`Theme.swift`: `Color.mw` wraps a trait-resolution closure, and a widget is archived and drawn
+by the system, so `WidgetPalette` resolves the same hex values against `colorScheme` itself.
+`Widget/Localizable.xcstrings` holds the widget's copy plus the shared files' strings, copied
+across from the app's catalog so they do not turn up as new and untranslated.
+
+**Packaging.** An extension is a bundle of its own inside `PlugIns/`, with its own executable,
+signature directory and debug map. `build-ipa.sh` strips and de-signs every `.appex` as well
+as the app, and `verify-clean.sh` looks for signatures and profiles at any depth. The
+extension is also one more App ID for whoever installs it: a free Apple ID gets ten a week,
+and AltStore offers to drop extensions to stay under that, which drops the widget with them.
+
+## The floating meter
+
+`Floating/` puts the live reading in a Picture in Picture window, started by hand from
+Settings. It exists because neither glance can show a number that moves while the app
+is away: a widget shows what it read at its last timeline reload and iOS grants
+roughly one reload every 15 to 60 minutes, and a live activity can only be updated by
+a running app — push updates need APNs and a team certificate, which a re-signed build
+can never have. Every reload WidgetKit does not charge to the budget comes down to the
+same thing (app in the foreground, an active audio or navigation session, a tap on the
+widget, WidgetKit developer mode in Settings → Developer). PiP is the one surface the
+system keeps alive by itself: it wants frames, so the process runs, and the one-second
+tick keeps reading sensors.
+
+- **`UIBackgroundModes = audio` is the price** — see *Performance*. Nothing is ever
+  played: the session is `.playback` with `.mixWithOthers` and carries no audio, and
+  `shouldProhibitBackgroundAudioPlayback` returns false, so whatever the phone was
+  playing keeps playing.
+- **The layer has to be on screen.** `RootView` keeps `FloatingMeterStage` — the host
+  for the `AVSampleBufferDisplayLayer` that PiP draws from — 16 × 9 pt at 2 % opacity
+  behind the tab bar for the life of the app. The system opens no window for a layer
+  that is not in the hierarchy and closes the window when the source goes away, which
+  rules out hosting it in the Settings sheet, the obvious place for a preview. Settings
+  shows a plain SwiftUI copy of the frame instead.
+- **Frames are rendered, not captured.** `ImageRenderer` draws `FloatingMeterTelemetryFrame`
+  at 640 × 360 @1× into a pooled BGRA `CVPixelBuffer`, then a `CMSampleBuffer` tagged
+  `DisplayImmediately` — there is no timebase on the layer, each frame is shown when it
+  arrives. A failed renderer stays failed until it is flushed and silently swallows
+  every frame after, which looks exactly like a frozen reading, so the status is
+  checked on the way in. The frame carries a running clock: if the seconds stop, the
+  reading behind them stopped too.
+- **Frames are painted only while the window is up**, plus one frame at launch to build
+  the controller. `ImageRenderer` runs on the main thread — 15–20 ms a frame on an iPhone
+  Air — and v1.3.0–v1.4.0 painted every tick for the life of the app, window or not. The
+  first fix stopped painting once `isPictureInPicturePossible` came true, and on a device
+  it never does while the window is closed, so nothing changed; the gate is "painted
+  once" now. `start()` paints a current frame before asking, because an idle layer holds
+  whatever it last showed.
+- **`controlsStyle = 1`** is undocumented, guarded by a `responds(to:)` check, and the
+  reason the window reads as an instrument rather than a paused video: it drops the
+  play/pause and skip buttons AVKit otherwise draws over the frame.
+- **The controller is built on the first frame, not on the first tap.**
+  `isPictureInPicturePossible` is the controller's own answer, so building it inside
+  `start()` — which is what the button waits on — is a deadlock: no controller, so the
+  window is never reported as available, so the button stays disabled and nothing ever
+  builds the controller. The button is now only disabled while a start is in flight,
+  a start the system silently ignores (it answers neither the window nor the delegate)
+  is reported as `.notReady`, and a `.starting` that is never confirmed times out after
+  six seconds.
+- **The tick feeds every glance now.** `PowerMonitor.onTick` replaced `RootView`'s
+  `onChange(of: monitor.snapshot.date)`: SwiftUI stops updating views once the app is
+  off screen, which is exactly when the window is the only thing still showing a
+  number. `RootView` also skips `monitor.pause()` while the window is open.
+
+Unverified on a device when this was written: that PiP starts from a host that small,
+that `IOHIDEventSystemClient` still answers once the app is in the background, and how
+often iOS actually asks for a frame.
+
+## Shortcuts
+
+`Shortcuts/GetReadingIntent.swift` is one action, *Get Reading*, asked for in issue #9
+for a charging automation: switch a smart plug off when the battery gets hot. Its
+parameter is the four readings the live activity offers — same names, same snapshot
+fields, so a shortcut and the Dynamic Island agree — plus the charge level, and a
+Celsius/Fahrenheit unit that the parameter summary only shows for the temperatures. It
+returns `Double?`.
+
+- **No reading is no value — never 0, never the last one.** The automation is a cutoff,
+  and a cutoff that is handed 0 when the sensor is silent compares false forever and
+  leaves the charger on: it fails open, silently. As no value, Shortcuts' *does not have
+  any value* can catch it and cut the power anyway. The exception is charging power
+  while unplugged, which is a known 0, not a missing reading.
+- **It runs in the app's process, often with no scene.** When MiniWatts is not running,
+  iOS launches it in the background to perform the action: no `RootView`, and no tick,
+  since the tick only runs in the foreground. So `PowerMonitor.snapshot` is unusable —
+  it is as old as the last tick — and the action reads through `readNow()`, which
+  re-enumerates the HID services (a charger plugged in while the app was suspended is
+  not in the old list) and takes one probe with none of the tick's side effects. Reusing
+  `refresh()` would open a one-sample charge session every time an automation ran.
+- **It must go through `PowerMonitor` rather than build its own sensors**, because a
+  process gets one working HID client and a second reads NaN. `MiniWattsApp.init`
+  registers the monitor with `AppDependencyManager`, and the intent takes it through
+  `@Dependency`. `init` is the place because it is the one thing that runs on every
+  launch, background or not.
+- **Isolation.** Marking the struct `nonisolated`, as `EndChargeActivityIntent` is,
+  does not compile here: Swift 6.2 rejects `nonisolated` on the `@Parameter` and
+  `@Dependency` stored properties ("cannot be applied to mutable stored properties").
+  So the struct keeps the default isolation and every protocol requirement is marked
+  `nonisolated` instead. The conformance could not be main-actor isolated anyway:
+  `AppIntent` refines `Sendable`. The snapshot is built on `SensorProbe` and awaited
+  through `monitor.readNow()`; `PowerSnapshot` is `@unchecked Sendable` for that hop
+  (its IOKit dictionaries are never mutated after construction).
+- The metadata was checked in the built bundle (`Metadata.appintents/extract.actionsdata`):
+  discoverable, `openAppWhenRun` false, and the `When` clause over the three
+  temperatures. Parameter summaries are localised under `${metric}`-style keys, which
+  the Swift string extractor does not emit — those entries were added to the catalog by
+  hand.
+
+Checked on a device (iPhone18,4, iOS 27): with MiniWatts swiped away in the app
+switcher, running the action from the Shortcuts app returned all five readings. So a
+cold background launch — a process that never had a scene — does run
+`MiniWattsApp.init`, `@Dependency` resolves, and `IOHIDEventSystemClient` answers. That
+is evidence for the floating meter's open question too, not proof of it: there the app
+is suspended and kept alive, here it is launched fresh. The case issue #9 is for
+passed too: a personal automation on *When power is connected*, with MiniWatts swiped
+away and the phone locked, showed the battery temperature in its notification — the
+sensors answer while the device is locked.
 
 ## Distribution
 
 Releases ship an **unsigned** ipa. A signed one carries a provisioning profile, and
 that profile contains the team ID, every developer certificate and **the UDID of
 every registered device** — five of them, in the build checked. Never publish one.
+
+**The app source** (SideStore, AltStore, LiveContainer's bundled SideStore) is
+`apps.json`, written by `scripts/make-source.py` from the release's ipa and attached to
+the release by CI. Users add
+`https://github.com/ResistanceTo/MiniWatts/releases/latest/download/apps.json`, which
+GitHub redirects to the newest non-prerelease's copy — so the address never changes, beta
+tags never reach it, and no bot commits back to master. Version, build, size and privacy
+keys are read from the ipa, never typed: AltStore compares them with what it downloads and
+refuses to install on any difference. Entitlements are declared empty because the ipa is
+unsigned, and the script refuses a signed ipa rather than describe it wrongly. Never add
+`marketplaceID`: SideStore takes it for a notarized AltStore PAL source and rejects the
+whole source. Icon and screenshots are served from master (`docs/icon.png`, exported
+from `MiniWatts/AppIcon.icon` with Icon Composer's `ictool`).
 
 Two things leak build paths into the binary and need two different fixes:
 
@@ -223,24 +499,80 @@ that, which is why `Backdrop`'s `.animation(_:value: glow)` restarted an 0.8 s
 full-screen `plusLighter` animation every second on the Thermal tab for a temperature
 that had not moved. Every palette entry is now a `static let`; keep it that way.
 
-There is **no `Info.plist` in the source tree** and there should not be one: the
-bundle is built entirely from `GENERATE_INFOPLIST_FILE` plus the `INFOPLIST_KEY_*`
-build settings. The file used to exist for a single key,
-`CADisableMinimumFrameDurationOnPhone`, which opts the app into 120 Hz for data that
-changes once a second; with that gone the file held nothing, and Xcode dropped both it
-and the `INFOPLIST_FILE` setting on the next build. Do not re-add it — put new keys in
-`INFOPLIST_KEY_*` instead.
+`MiniWatts/Info.plist` holds **one key**, `UIBackgroundModes`, and should hold no
+more: everything else in the bundle comes from `GENERATE_INFOPLIST_FILE` plus the
+`INFOPLIST_KEY_*` settings, which are merged with the file. Put new keys in
+`INFOPLIST_KEY_*`. `UIBackgroundModes` is there because it has no build setting —
+Xcode's own spec defines none — and Picture in Picture will not start without it.
+The file had been deleted once before, when its only key was
+`CADisableMinimumFrameDurationOnPhone` (120 Hz for data that changes once a second),
+and Xcode dropped the `INFOPLIST_FILE` setting along with it. Note that the app
+folder is synchronised into the target, so the file also needs a membership exception
+or it is copied into the bundle as a resource as well — the same exception Xcode
+writes for the widget's own `Info.plist`.
 
 `PageScaffold` uses a `LazyVStack`. History puts up to sixty session panels through it.
 
-Already removed: `contentTransition(.numericText())` on every readout (it is opt-in
-via `mwReadout(rolling:)` now, used only by the dial), and the heat map's 0.6 s
-animation, which was retriggered every second on a `blur` + `plusLighter` layer.
-The grid `Canvas` is `.drawingGroup()`-rasterised.
+**A tick must re-run panels, not pages.** An iPhone 15 Pro user reported a hitch once
+a second in any scroll, on every tab, charging or not. Average CPU never shows that;
+what does is how long the main thread is busy right after each tick. Measured in the
+simulator (Debug) with a run-loop observer and Time Profiler, each tick re-ran
+`RootView` (it read the snapshot for the idle timer), the page, `PageScaffold` — the
+navigation stack, title, toolbar and scroll view — and every panel. It did that on
+**every tab that had been visited**, because a `TabView` keeps visited tabs alive and
+their observation keeps firing while they are hidden. The sensor read itself was
+1–3 ms of the burst. Four tabs visited came to 24 ms of main thread a tick without
+scrolling; Power alone, scrolling, 13–18 ms, about half of it inside Swift Charts. At
+120 Hz a frame is 8.3 ms. Now only `PageContent`, its panels and `PageBackdrop` re-run,
+and only on the tab in front: 7–9 ms in the same run. The rules that keep it there:
+
+- A page reads the monitor only inside the closures it hands `PageScaffold`, never in
+  its own body. `glow` is an autoclosure for exactly this.
+- `RootView` reads nothing that changes every tick. `ScreenAwakeHolder` is the leaf that
+  does it instead.
+- `TabPage` decides whether a tab is built from the tab's own appear and disappear.
+  Deciding it in `RootView` from the selection had no effect: a hidden tab never gets
+  its parent's update, so it kept its page and went on updating it.
+
+**The biggest cost only shows on a device.** On an iPhone Air (iOS 27, Release, Time
+Profiler) the main thread was busy about 400 ms of every second while the Power page
+scrolled. Most of it was Core Animation commits drawing one SwiftUI layer on the CPU —
+`CGDrawingLayer` → `RBInterpolatedDisplayListContents` → `RBMovedDisplayListContents`,
+with a gaussian blur, gradients and glyphs inside — redrawn on every scroll frame. The
+simulator renders the same content on the GPU and showed none of it. The layer was the
+dial's number: its `.numericText()` digit roll, run inside the dial's `.animation` every
+second. Found by bisecting a test build that scrolls itself, with switches read from
+the launch environment (`xctrace record --env … --launch -- <bundle id>`): with the page
+content replaced by plain rows the CPU drawing went to 1 ms/s. Switching off the backdrop,
+the dial's shadow, its tick `Canvas` and the live chart, singly or all together, changed
+nothing. Switching off the digit roll alone took it from 116–180 ms/s to 11. Readouts
+snap now, the dial's included. Two more per-tick costs were measured there: the floating
+meter's frame (above) at 15–20 ms, and the sensor read and the rest of `refresh()` at
+about 5 ms.
+
+Already removed: `contentTransition(.numericText())` on every readout, the dial's last
+(see above), and the heat map's 0.6 s animation, which was retriggered every second on a
+`blur` + `plusLighter` layer. The grid `Canvas` is `.drawingGroup()`-rasterised.
 
 Deliberately kept despite the cost, as design decisions: the `Backdrop`'s full-screen
-`plusLighter` glow, and `PowerRing`'s `.shadow` on a stroked arc (a non-rectangular
-shadow is an offscreen pass per frame).
+`plusLighter` glow, and `PowerRing`'s `.shadow` on a stroked arc. Both were switched off
+in the bisection above and neither moved the main-thread numbers.
+
+**Follow-up: the once-per-second hitch remained in the installed 1.4.0 build.** A
+16-second iPhone Air Time Profiler recording of that exact binary, symbolicated
+with its matching dSYM, found 15 `PowerMonitor.refresh()` bursts about 1.05–1.13 s
+apart. The main thread had roughly 5–6 ms of sampled work per tick inside
+`refresh()`, including the synchronous IOKit/HID calls. It then had roughly
+40–50 ms of sampled work in the next 150 ms, and kept rendering until about
+550 ms after the tick before going nearly idle. The strongest leaf-sample groups
+were CoreGraphics, SwiftUICore and AttributeGraph. This recording was on Power;
+it does not by itself identify the cost of every other tab. The dial still had
+two 0.45 s arc animations on values that change every tick, matching the long
+rendering tail. Those animations have now been removed. The shared probe and
+snapshot assembly have moved to `SensorProbe`, an actor outside the main actor;
+`PowerMonitor` publishes the result on the main actor. Scrolled by hand on a device
+after these changes, shipped in v1.4.1: no hitch. Not yet re-recorded with Time
+Profiler.
 
 ## Conventions
 

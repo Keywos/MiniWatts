@@ -31,8 +31,19 @@ struct ThermalView: View {
                 ForEach(snapshot.temperaturesByZone) { group in
                     zonePanel(group)
                 }
+                modelNote
             }
         }
+    }
+
+    /// Which sensors exist, what they are called and how they are scaled is different
+    /// on every model and documented nowhere. Readings outside anything physical are
+    /// dropped by `HIDSensors`, but a value that is wrong and still looks plausible
+    /// cannot be caught that way, so the page says so rather than implying otherwise.
+    private var modelNote: some View {
+        EmptyNote(text: "Sensor names and scales differ by iPhone model, and this build was checked on an iPhone Air. Impossible readings are hidden, but a reading that is merely wrong cannot be spotted that way — if something here looks off for your model, it may well be.",
+                  systemImage: "exclamationmark.circle")
+            .padding(.horizontal, 4)
     }
 
     private var glowColor: Color {

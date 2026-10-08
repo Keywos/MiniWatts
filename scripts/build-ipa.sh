@@ -23,8 +23,6 @@ BUILD_DIR="build"
 DERIVED="$BUILD_DIR/DerivedData"
 ARCHIVE="$BUILD_DIR/$SCHEME.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
-# Override to sideload under a bundle id your own Apple ID can claim.
-BUNDLE_ID="${BUNDLE_ID:-}"
 
 # The version comes from git, so a release is one step: tag and push. Nothing in the
 # project file has to be edited first.
@@ -59,8 +57,13 @@ esac
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p "$BUILD_DIR"
 
+# The version worked out above is handed to xcodebuild here. Bundle identifiers are
+# not: they come from the project exactly as Xcode has them —
+# org.zhaohe.MiniWatts for the app, org.zhaohe.MiniWatts.Widget for the widget. A build
+# setting given on the xcodebuild command line applies to every target at once, so the
+# BUNDLE_ID override this script used to have handed the widget extension the app's own
+# identifier, and iOS rejects an extension whose identifier does not extend its app's.
 overrides=()
-[ -n "$BUNDLE_ID" ] && overrides+=("PRODUCT_BUNDLE_IDENTIFIER=$BUNDLE_ID")
 [ -z "${MARKETING_VERSION:-}" ] || overrides+=("MARKETING_VERSION=$MARKETING_VERSION")
 [ -z "${CURRENT_PROJECT_VERSION:-}" ] || overrides+=("CURRENT_PROJECT_VERSION=$CURRENT_PROJECT_VERSION")
 echo "==> Version ${MARKETING_VERSION:-(project file)} build ${CURRENT_PROJECT_VERSION:-(project file)}"
@@ -105,6 +108,14 @@ if [ "$MODE" = "unsigned" ]; then
   # debug and local symbols removes them. The dSYM in DerivedData keeps whatever
   # is needed to symbolicate a crash later.
   xcrun strip -S -x "$BUILD_DIR/Payload/$SCHEME.app/$SCHEME"
+  # App extensions — the widget — are bundles of their own inside PlugIns, with their
+  # own executable, their own signature directory and their own debug map. Stripping
+  # only the app binary shipped the extension's build paths untouched.
+  while IFS= read -r -d '' appex; do
+    rm -rf "$appex/_CodeSignature"
+    executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$appex/Info.plist")"
+    xcrun strip -S -x "$appex/$executable"
+  done < <(find "$BUILD_DIR/Payload/$SCHEME.app" -name '*.appex' -type d -print0)
   (cd "$BUILD_DIR" && zip -qry "export/$SCHEME-unsigned.ipa" Payload)
   rm -rf "$BUILD_DIR/Payload"
   IPA="$EXPORT_DIR/$SCHEME-unsigned.ipa"

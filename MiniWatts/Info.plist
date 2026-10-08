@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Picture in Picture is built on the media playback stack and will not start
+	     without this. MiniWatts plays no audio: the floating meter is a video
+	     surface it paints once a second, and its audio session mixes with others
+	     so whatever is already playing keeps playing. Every other Info.plist key
+	     still comes from GENERATE_INFOPLIST_FILE and the INFOPLIST_KEY_* settings;
+	     this file exists only because UIBackgroundModes has no build setting. -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
