@@ -41,7 +41,8 @@ struct SettingsView: View {
     }
 
     private var pipPanel: some View {
-        Panel("Picture in Picture", systemImage: "pip") {
+        @Bindable var pipManager = PiPManager.shared
+        return Panel("Picture in Picture", systemImage: "pip") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -52,8 +53,8 @@ struct SettingsView: View {
                             .foregroundStyle(Color.mwMuted)
                     }
                     Spacer()
-                    Button(PiPManager.shared.isActive ? "Stop" : "Start") {
-                        PiPManager.shared.togglePiP()
+                    Button(pipManager.isActive ? "Stop" : "Start") {
+                        pipManager.togglePiP()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.mwAccent)

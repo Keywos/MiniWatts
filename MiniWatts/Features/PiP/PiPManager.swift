@@ -4,6 +4,7 @@ import SwiftUI
 
 /// 驱动画中画（Picture in Picture）窗口并在其中以自绘画面实时显示各项功耗与温度指标
 @MainActor
+@Observable
 final class PiPManager: NSObject, AVPictureInPictureControllerDelegate {
     static let shared = PiPManager()
 
