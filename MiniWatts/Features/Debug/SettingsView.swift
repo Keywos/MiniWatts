@@ -206,7 +206,7 @@ struct SettingsView: View {
 
     /// Where the source lives. Kept as a constant rather than built inline: a typo in
     /// a string literal would only show up as a force-unwrap crash on this screen.
-    private static let repository = URL(string: "https://github.com/ResistanceTo/MiniWatts")!
+    private static let repository = URL(string: "https://github.com/Keywos/MiniWatts")!
 
     private var aboutPanel: some View {
         Panel("About", systemImage: "info.circle") {
@@ -227,7 +227,7 @@ struct SettingsView: View {
                 }
                 Link(destination: Self.repository) {
                     HStack(spacing: 8) {
-                        Text(verbatim: "github.com/ResistanceTo/MiniWatts")
+                        Text(verbatim: "github.com/Keywos/MiniWatts")
                             .mwMono(size: 12, weight: .medium)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
