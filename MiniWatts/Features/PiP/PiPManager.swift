@@ -17,6 +17,10 @@ final class PiPManager {
 
     var onStateChanged: ((Bool) -> Void)?
 
+ 
+
+    private var wantsPiP = false
+
     private var pipController: AVPictureInPictureController?
     private var displayLayer: AVSampleBufferDisplayLayer?
     private var pipSourceView: UIView?
@@ -66,6 +70,16 @@ final class PiPManager {
 
         configureAudioSession()
 
+        // 整个进程只在此处建一次图层与控制器,调用方(锚点视图)却会在每次重建时
+        // 再调一次,所以视图要就地复用:多出来的宿主视图会各自挂一份黑底,并让
+        // AVKit 在窗口关闭后仍在 inline 位置看到一个可自动拉起的来源。
+        if let existing = pipSourceView {
+            existing.removeFromSuperview()
+            existing.frame = containerView.bounds
+            containerView.addSubview(existing)
+            return
+        }
+
         let layer = AVSampleBufferDisplayLayer()
 
         layer.videoGravity = .resizeAspect
@@ -112,7 +126,12 @@ final class PiPManager {
 
         let controller = AVPictureInPictureController(contentSource: contentSource)
         controller.delegate = proxy
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        // 代价很大,别打开:图层常驻视图层级且每秒都有新帧,所以它在 AVKit 眼里
+        // 永远"正在播放",开着这个开关等于让 iOS 每次退到后台都自行拉起窗口 ——
+        // 手动关掉再回主屏,窗口就自己回来了,而用户的意思恰恰相反。窗口只能由
+        // 按钮打开。
+        controller.canStartPictureInPictureAutomaticallyFromInline = false
+        // 关掉了系统那一条路径,用户点关闭时还剩下 `didStop`,由它清掉 `wantsPiP`。
         controller.requiresLinearPlayback = true
         self.pipController = controller
 
@@ -121,7 +140,9 @@ final class PiPManager {
     }
 
     func togglePiP() {
-        if isPiPActive {
+        // 以"意愿"判断,不以窗口状态判断:重试期间窗口尚未打开,而用户关闭窗口时
+        // `isPiPActive` 也已经归假,两种情况都必须能反转。
+        if wantsPiP {
             stopPiP()
         } else {
             startPiP()
@@ -133,8 +154,15 @@ final class PiPManager {
             print("[PiPManager] pipController is nil")
             return
         }
+
+        // 先取消上一次仍未落地的重试:否则它会在延迟结束后调用
+        // `startPictureInPicture()`,用户刚关掉的窗口于是自己回来。
+        retryTask?.cancel()
+        retryTask = nil
+
         guard !controller.isPictureInPictureActive else { return }
 
+        wantsPiP = true
         configureAudioSession()
         startFrameLoop()
 
@@ -144,11 +172,11 @@ final class PiPManager {
         } else {
             // 如果图层尚未就绪，重试启动（最多等待 1.5 秒）
             print("[PiPManager] isPictureInPicturePossible is false, waiting...")
-            retryTask?.cancel()
-            retryTask = Task {
+            retryTask = Task { [weak self] in
                 for attempt in 0..<15 {
                     try? await Task.sleep(for: .milliseconds(100))
                     if Task.isCancelled { return }
+                    guard let self, self.wantsPiP else { return }
                     if controller.isPictureInPicturePossible {
                         controller.startPictureInPicture()
                         print("[PiPManager] Started PiP after retry \(attempt + 1)")
@@ -161,7 +189,17 @@ final class PiPManager {
     }
 
     func stopPiP() {
-        guard let controller = pipController, controller.isPictureInPictureActive else { return }
+        // 在 `guard` 之前清掉:窗口可能还没打开(仍在重试),那种情况下要取消的
+        // 只是重试,而不是直接返回、把它留在那里,等它稍后把窗口拉起来。
+        wantsPiP = false
+        retryTask?.cancel()
+        retryTask = nil
+
+        guard let controller = pipController, controller.isPictureInPictureActive else {
+            isPiPActive = false
+            stopFrameLoop()
+            return
+        }
         controller.stopPictureInPicture()
     }
 
@@ -504,21 +542,28 @@ final class PiPManager {
 
     // MARK: - Delegate callbacks
 
-    /// Called by `Proxy`, on the main thread.
+    /// Called by `Proxy`, on the main thread when the window is up.
     fileprivate func didStart() {
         isPiPActive = true
         startFrameLoop()
     }
 
-    /// Called by `Proxy`, on the main thread.
+    /// Called by `Proxy`, on the main thread once the window is gone. This is the
+    /// only path left that records a user closing the window — it is what stops the
+    /// window from coming back when the app next goes to the background, so it must
+    /// clear `wantsPiP` as well as the flag the button reads.
     fileprivate func didStop() {
+        wantsPiP = false
         isPiPActive = false
+        retryTask?.cancel()
+        retryTask = nil
         stopFrameLoop()
     }
 
     /// Called by `Proxy`, on the main thread.
     fileprivate func didFail(_ error: any Error) {
         print("[PiPManager] PiP failed to start: \(error)")
+        wantsPiP = false
         isPiPActive = false
         stopFrameLoop()
     }
@@ -540,10 +585,6 @@ final class PiPManager {
             self.owner = owner
         }
 
-        nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
-            MainActor.assumeIsolated { owner?.didStart() }
-        }
-
         nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
             MainActor.assumeIsolated { owner?.didStart() }
         }
@@ -551,10 +592,6 @@ final class PiPManager {
         nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
                                                     failedToStartPictureInPictureWithError error: any Error) {
             MainActor.assumeIsolated { owner?.didFail(error) }
-        }
-
-        nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ controller: AVPictureInPictureController) {
-            MainActor.assumeIsolated { owner?.didStop() }
         }
 
         nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
