@@ -23,7 +23,13 @@ permissions:
 jobs:
   ipa:
     name: Unsigned ipa
-    runs-on: macos-15
+    # macOS 26 Tahoe ships Xcode 26.x, whose toolchain is Swift 6.2 or newer —
+    # which this project needs. `nonisolated` on type and extension declarations
+    # is a Swift 6.2 feature, so an older compiler rejects the source outright.
+    # Pinning macos-15 and then Xcode 16.2 (Swift 6.0.3) is what failed the
+    # v1.0.2, v1.0.3 and v1.0.4 tags: the build died in the widget target with
+    # "'nonisolated' modifier cannot be applied to this declaration".
+    runs-on: macos-26
     permissions:
       # Only the release step at the bottom uses this, and only on a tag.
       contents: write
@@ -38,7 +44,11 @@ jobs:
       - name: Select newest Xcode
         run: |
           ls -d /Applications/Xcode*.app || true
-          newest="/Applications/Xcode_16.2.app"
+          # Never pin a specific Xcode here. The image's newest carries the
+          # newest Swift, and the Check toolchain step below fails with a clear
+          # message if that is still too old — a pinned 16.2 instead fails deep
+          # in the compile with an error that does not name the real cause.
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$newest"
           xcodebuild -version
           swift --version
@@ -48,7 +58,7 @@ jobs:
       # compile with errors that do not name the real cause. Say it up front.
       - name: Check toolchain
         run: |
-          required=6.0
+          required=6.2
           found=$(swift -version 2>&1 | sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -1)
           echo "Swift $found (need $required or newer)"
           if [ "$(printf '%s\n%s\n' "$required" "$found" | sort -V | head -1)" != "$required" ]; then
