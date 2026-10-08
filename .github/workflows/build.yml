@@ -38,7 +38,7 @@ jobs:
       - name: Select newest Xcode
         run: |
           ls -d /Applications/Xcode*.app || true
-          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          newest="/Applications/Xcode_16.2.app"
           sudo xcode-select -s "$newest"
           xcodebuild -version
           swift --version
